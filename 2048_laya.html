@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>2048 · Laya 决策模型自动对局</title>
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --panel2:#fafbfc; --line:#e4e7ec; --line2:#eef1f4;
+  --text:#1d2430; --muted:#667085; --dim:#98a2b3;
+  --accent:#2f6fed; --accent-weak:#eaf1fe;
+  --ok:#0d9488; --ok-weak:#e6f6f3;
+  --warn:#c2740a; --warn-weak:#fdf3e3;
+  --bad:#d64545; --bad-weak:#fdecec;
+  --info:#5b6b7c; --info-weak:#eef1f4;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --radius:10px; --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);
+  --tray:#dfe4ea;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1440px;margin:0 auto;padding:20px 22px 56px}
+
+/* ---------- header ---------- */
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:14px}
+h1{font-size:19px;font-weight:650;margin:0;letter-spacing:.2px}
+h1 span{color:var(--muted);font-weight:400;font-size:13px;margin-left:8px}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
+  background:var(--panel);border:1px solid var(--line);font-size:12px;color:var(--muted);
+  font-family:var(--mono);white-space:nowrap}
+.badge b{color:var(--text);font-weight:600}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--dim);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+
+/* ---------- banner ---------- */
+.banner{border:1px solid #f0d9ad;background:var(--warn-weak);border-radius:var(--radius);
+  padding:11px 14px;margin-bottom:14px;font-size:13px;color:#7a4a05;display:flex;gap:10px}
+.banner .ic{font-size:15px;line-height:1.4;flex:none}
+.banner b{color:#6b3f03}
+.banner code{font-family:var(--mono);background:#fff8ec;border:1px solid #f0d9ad;border-radius:4px;padding:1px 5px;font-size:12px}
+.banner.ok{border-color:#bfe3dd;background:var(--ok-weak);color:#0b5c53}
+.banner.ok b{color:#07443d}
+.banner.bad{border-color:#f5cdcd;background:var(--bad-weak);color:#9b2c2c}
+.banner.bad b{color:#8a1f1f}
+.banner.bad code{background:#fff;border-color:#f5cdcd}
+.banner.hidden{display:none}
+
+/* ---------- layout ---------- */
+.grid{display:grid;grid-template-columns:minmax(360px,420px) minmax(460px,1fr);gap:16px;align-items:start}
+@media(max-width:1020px){.grid{grid-template-columns:1fr}}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+/* ---------- card ---------- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card>.hd{display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--line2);
+  font-size:13px;font-weight:600}
+.card>.hd .sub{font-weight:400;color:var(--muted);font-size:12px;font-family:var(--mono)}
+.card>.hd .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+.card>.bd{padding:12px 13px}
+
+/* ---------- controls ---------- */
+label.lb{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+input[type=text],input[type=number],select{
+  width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);
+  border-radius:7px;padding:7px 9px;font-size:13px;font-family:inherit;outline:none}
+input:focus,select:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px var(--accent-weak)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+input[type=checkbox]{accent-color:var(--accent)}
+button{font-family:inherit;font-size:13px;border-radius:7px;border:1px solid var(--line);
+  background:var(--panel);color:var(--text);padding:7px 12px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--dim);background:var(--panel2)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{background:#2560d8;border-color:#2560d8}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.mini{padding:3px 8px;font-size:12px}
+button.ghost{background:transparent;border-color:transparent;color:var(--muted);padding:3px 7px;font-size:12px}
+button.ghost:hover{background:var(--info-weak);color:var(--text)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>*{min-width:0}
+.grow{flex:1}
+.hint{font-size:12px;color:var(--dim);margin-top:6px;line-height:1.5}
+.hint code{font-family:var(--mono);background:var(--info-weak);border-radius:4px;padding:1px 4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.full{grid-column:1/-1}
+
+/* ---------- board ---------- */
+.boardwrap{display:flex;flex-direction:column;gap:10px}
+.boardhead{display:flex;align-items:baseline;gap:10px}
+.scorebox{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 11px;text-align:center;min-width:82px}
+.scorebox .k{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.scorebox .v{font-family:var(--mono);font-size:18px;font-weight:680;line-height:1.25}
+.gain{font-family:var(--mono);font-size:13px;font-weight:650;color:var(--ok);opacity:0;transition:opacity .3s}
+.gain.show{opacity:1}
+.board{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;background:var(--tray);
+  border-radius:12px;padding:9px;aspect-ratio:1/1;position:relative}
+.tile{display:flex;align-items:center;justify-content:center;border-radius:7px;background:#eef1f4;
+  font-family:var(--mono);font-weight:700;transition:background .12s,color .12s}
+.tile.empty{background:#eef1f4}
+.tile.pop{animation:pop .18s ease}
+@keyframes pop{from{transform:scale(.35);opacity:.4}to{transform:scale(1);opacity:1}}
+.board.over{outline:2px solid var(--bad);outline-offset:3px}
+.overlay{position:absolute;inset:9px;border-radius:8px;background:rgba(255,255,255,.86);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-weight:650}
+.overlay .big{font-size:22px;letter-spacing:-.3px}
+.overlay .sm{font-size:12.5px;color:var(--muted);font-weight:400}
+
+/* ---------- stats ---------- */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.st{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+.st .n{font-family:var(--mono);font-size:17px;font-weight:680;line-height:1.25}
+.st .t{font-size:11px;color:var(--muted)}
+.st .sm{font-size:10.5px;color:var(--dim);font-family:var(--mono)}
+
+/* ---------- history ---------- */
+.hist{max-height:660px;overflow:auto;padding:2px}
+.hist .empty{color:var(--dim);font-size:13px;padding:18px 4px;text-align:center}
+.he{border:1px solid var(--line);border-left:3px solid var(--line);border-radius:8px;
+  padding:8px 10px;margin-bottom:8px;background:var(--panel)}
+.he.fresh{animation:hl 1.1s ease}
+@keyframes hl{from{background:var(--accent-weak)}to{background:var(--panel)}}
+.he.fb{border-left-color:var(--warn)}
+.he.bad{border-left-color:var(--bad)}
+.hhd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hidx{font-family:var(--mono);font-size:12px;color:var(--dim)}
+.hdir{font-family:var(--mono);font-size:13.5px;font-weight:700}
+.hp{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.hgain{font-family:var(--mono);font-size:12.5px;font-weight:650;color:var(--ok)}
+.hmeta{font-family:var(--mono);font-size:11px;color:var(--dim);margin-left:auto}
+.hbd{display:flex;gap:12px;align-items:center;margin-top:7px;flex-wrap:wrap}
+.minis{display:flex;align-items:center;gap:6px}
+.mini{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(4,1fr);
+  gap:2px;width:60px;height:60px;flex:none}
+.mini i{border-radius:2px;background:#e6eaef}
+.hbars{display:flex;flex-direction:column;gap:2px;flex:1;min-width:180px}
+.pb{display:grid;grid-template-columns:16px 1fr 52px;gap:6px;align-items:center;font-size:11px;font-family:var(--mono);color:var(--muted)}
+.pb.sel{color:var(--text);font-weight:650}
+.ptrack{height:7px;background:var(--info-weak);border-radius:4px;overflow:hidden}
+.pfill{display:block;height:100%;background:#c3ccd7;border-radius:4px}
+.pb.sel .pfill{background:var(--accent)}
+.pv{text-align:right}
+.hnote{font-size:11.5px;color:var(--muted);font-family:var(--mono);margin-top:6px;
+  padding-top:6px;border-top:1px dashed var(--line2);word-break:break-all}
+.tag{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:4px;
+  background:var(--info-weak);color:var(--info);border:1px solid var(--line)}
+.tag.warn{background:var(--warn-weak);color:var(--warn);border-color:#f0d9ad}
+.tag.bad{background:var(--bad-weak);color:var(--bad);border-color:#f5cdcd}
+.tag.ok{background:var(--ok-weak);color:var(--ok);border-color:#bfe3dd}
+
+pre{margin:8px 0 0;padding:9px 11px;background:#1d2430;color:#dfe6ef;border-radius:7px;
+  font-family:var(--mono);font-size:11.5px;line-height:1.55;overflow:auto;max-height:300px;white-space:pre-wrap;word-break:break-all}
+details{margin-top:9px}
+summary{cursor:pointer;font-size:12px;color:var(--muted);outline:none;user-select:none}
+summary:hover{color:var(--text)}
+.err{background:var(--bad-weak);border:1px solid #f5cdcd;color:#9b2c2c;border-radius:8px;
+  padding:9px 11px;font-size:12.5px;font-family:var(--mono);white-space:pre-wrap;margin-bottom:10px}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid rgba(255,255,255,.45);
+  border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px;margin-right:5px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>2048 · Laya 决策模型自动对局<span>每步一次 /api/predict · 抉择全程留痕</span></h1>
+    <div class="badges" id="badges"><span class="badge">连接中…</span></div>
+  </header>
+
+  <div class="banner" id="banner"><span class="ic">…</span><div id="bannerText">正在探测 <code>127.0.0.1:8771</code> 后端…</div></div>
+
+  <div class="grid">
+    <!-- ================= 左：棋盘 + 控制 ================= -->
+    <div class="col">
+
+      <div class="card">
+        <div class="hd">棋盘<span class="sub" id="boardSub">4 × 4</span>
+          <div class="right"><span class="tag" id="turnTag">idle</span></div>
+        </div>
+        <div class="bd">
+          <div class="boardwrap">
+            <div class="boardhead">
+              <div class="scorebox"><div class="k">Score</div><div class="v" id="scoreV">0</div></div>
+              <div class="scorebox"><div class="k">Best</div><div class="v" id="bestV">0</div></div>
+              <div class="scorebox"><div class="k">Max tile</div><div class="v" id="maxV">0</div></div>
+              <div style="flex:1"></div>
+              <span class="gain" id="gainV">+0</span>
+            </div>
+            <div class="board" id="board"></div>
+          </div>
+          <div class="hint">棋盘状态以结构化文本喂给模型（<code>row1: 2 0 0 2 …</code> + 合法方向列表），模型在 <b>一次前向</b> 中同时回答「移动方向 / 拥挤度 / 能否合并」三个 typed question。</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd">控制台</div>
+        <div class="bd">
+          <div class="row" style="margin-bottom:10px">
+            <button class="primary grow" id="runBtn">▶ 开始自动对局</button>
+            <button id="stepBtn">单步</button>
+            <button id="resetBtn">重开</button>
+          </div>
+          <div class="grid2">
+            <div><label class="lb">决策间隔 <span id="delayV" style="font-family:var(--mono)">150 ms</span></label>
+              <input type="range" id="delay" min="0" max="2000" step="50" value="150"></div>
+            <div><label class="lb">choice 温度 T <span id="tempV" style="font-family:var(--mono)">1.00</span></label>
+              <input type="range" id="temp" min="0.05" max="3" step="0.05" value="1"></div>
+            <div><label class="lb">随机种子</label>
+              <div class="row"><input type="text" id="seed" class="grow" value="2048" spellcheck="false"><button class="mini" id="reseed">🎲</button></div></div>
+            <div><label class="lb">步数上限（0 = 不限）</label><input type="number" id="maxSteps" min="0" step="10" value="0"></div>
+            <div class="full row">
+              <label class="row" style="gap:6px;font-size:12.5px;color:var(--muted)"><input type="checkbox" id="autoNew" checked> 结束后自动开新局</label>
+              <label class="row" style="gap:6px;font-size:12.5px;color:var(--muted)"><input type="checkbox" id="showAll" checked> 历史显示全部（否则仅异常/回退）</label>
+            </div>
+          </div>
+          <div class="hint">
+            温度只作用于 <code>choice</code>（以 <code>temperature_mode: manual</code> 下发）。T↑ 更平、T↓ 更尖锐 ——
+            但当前词表非官方，四方向 logits 差异仅 ~1e-2，改变 T 基本不改变排序。
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd">统计<span class="sub">decision channel</span></div>
+        <div class="bd">
+          <div class="stats">
+            <div class="st"><div class="n" id="sGames">0</div><div class="t">对局数</div></div>
+            <div class="st"><div class="n" id="sMoves">0</div><div class="t">总步数</div></div>
+            <div class="st"><div class="n" id="sBest">0</div><div class="t">最高分</div></div>
+            <div class="st"><div class="n" id="sTile">0</div><div class="t">最大方块</div></div>
+            <div class="st"><div class="n" id="sFb">—</div><div class="t">回退率</div><div class="sm" id="sFbSub">0 / 0</div></div>
+            <div class="st"><div class="n" id="sLat">—</div><div class="t">平均延迟</div><div class="sm" id="sLatSub">ms / 次前向</div></div>
+            <div class="st"><div class="n" id="sMerge">—</div><div class="t">merge 判断命中</div><div class="sm" id="sMergeSub">vs 真值</div></div>
+            <div class="st"><div class="n" id="sCrowd">—</div><div class="t">crowding 命中</div><div class="sm" id="sCrowdSub">vs 真值</div></div>
+            <div class="st"><div class="n" id="sConf">—</div><div class="t">平均 max p</div><div class="sm">均匀基线 25%</div></div>
+          </div>
+          <div class="hint">「回退率」= 模型给出无效方向（棋盘不变）被改为次优合法方向的占比。「命中」= 模型作答与棋盘真值一致的比例，用来量化决策通道质量。</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================= 右：决策历史 ================= -->
+    <div class="col">
+
+      <div class="card">
+        <div class="hd">抉择历史<span class="sub" id="histSub">0 条</span>
+          <div class="right">
+            <button class="mini" id="expBtn">导出 JSONL</button>
+            <button class="mini" id="copyBtn">复制</button>
+            <button class="mini" id="clrBtn">清空</button>
+          </div>
+        </div>
+        <div class="bd" style="padding:9px">
+          <div class="err" id="errBox" style="display:none"></div>
+          <div class="hist" id="hist"><div class="empty">点「开始自动对局」后，每一次模型抉择的完整留痕都会打印在这里。</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd">最近一次请求 / 响应<span class="sub">/api/predict</span></div>
+        <div class="bd">
+          <div id="lastOut"><div class="hint" style="margin:0">尚未发起推理。</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================================================================== */
+/*  2048 ENGINE BEGIN — 纯逻辑，无 DOM 依赖（可被外部测试脚本直接抽取）  */
+/* ================================================================== */
+const DIRS = ['up', 'down', 'left', 'right'];
+const DIR_CN = { up: '上', down: '下', left: '左', right: '右' };
+const DIR_ARROW = { up: '↑', down: '↓', left: '←', right: '→' };
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function seedFrom(text){
+  let h = 2166136261 >>> 0;
+  const s = String(text);
+  for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h >>> 0;
+}
+/* 按方向取出第 i 条线（4 个坐标），顺序为「靠近目标边 → 远离」 */
+function lineCoords(dir, i, N){
+  const out = [];
+  for (let j = 0; j < N; j++){
+    if (dir === 'left')       out.push([i, j]);
+    else if (dir === 'right') out.push([i, N - 1 - j]);
+    else if (dir === 'up')    out.push([j, i]);
+    else                      out.push([N - 1 - j, i]);
+  }
+  return out;
+}
+/* 纯函数：滑动 + 合并一次。返回新棋盘、得分、是否发生位移、合并次数 */
+function applyMove(bd, dir, N){
+  const nb = bd.map(r => r.slice());
+  let gained = 0, moved = false, merges = 0;
+  for (let i = 0; i < N; i++){
+    const coords = lineCoords(dir, i, N);
+    const vals = coords.map(([r, c]) => bd[r][c]).filter(v => v !== 0);
+    const out = [];
+    for (let k = 0; k < vals.length; k++){
+      if (k + 1 < vals.length && vals[k] === vals[k + 1]){
+        const m = vals[k] * 2; out.push(m); gained += m; merges++; k++;
+      } else out.push(vals[k]);
+    }
+    while (out.length < N) out.push(0);
+    for (let k = 0; k < N; k++){
+      const [r, c] = coords[k];
+      if (bd[r][c] !== out[k]) moved = true;
+      nb[r][c] = out[k];
+    }
+  }
+  return { board: nb, gained, moved, merges };
+}
+function validMoves(bd, N){ return DIRS.filter(d => applyMove(bd, d, N).moved); }
+function canMerge(bd, N){
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++){
+    const v = bd[r][c]; if (!v) continue;
+    if (r + 1 < N && bd[r + 1][c] === v) return true;
+    if (c + 1 < N && bd[r][c + 1] === v) return true;
+  }
+  return false;
+}
+function flatBoard(bd){ return bd.flat(); }
+function maxTile(bd){ const f = flatBoard(bd); return f.length ? Math.max(...f) : 0; }
+function emptyList(bd, N){
+  const e = [];
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (!bd[r][c]) e.push([r, c]);
+  return e;
+}
+/* 棋盘 → 喂给模型的结构化文本 */
+function buildState(bd, score, N, valid){
+  const rows = bd.map((r, i) => `row${i + 1}: ${r.join(' ')}`);
+  return [
+    '2048 game, 4x4 board, rows listed from top to bottom, 0 marks an empty cell.',
+    ...rows,
+    `current score: ${score}`,
+    `maximum tile: ${maxTile(bd)}`,
+    `empty cells: ${emptyList(bd, N).length}`,
+    `moves that are legal right now: ${valid.join(', ')}`
+  ].join('\n');
+}
+/* typed questions：一次前向回答全部 3 问 */
+function buildQuestions(){
+  return [
+    { id: 'move', type: 'choice',
+      instructions: 'Which move should be played on this 2048 board? All tiles slide in the chosen direction and equal neighbours merge once.',
+      criteria: { up: 'slide every tile towards the top edge',
+                  down: 'slide every tile towards the bottom edge',
+                  left: 'slide every tile towards the left edge',
+                  right: 'slide every tile towards the right edge' } },
+    { id: 'crowding', type: 'score',
+      instructions: 'How crowded is this board?',
+      criteria: ['plenty of free space', 'free space is running low', 'the board is nearly blocked'] },
+    { id: 'merge_available', type: 'noul',
+      instructions: 'Does this board contain two adjacent tiles of equal value right now?' }
+  ];
+}
+/* 真值（用于量化决策通道口径） */
+function truthCrowdingLevel(bd, N){
+  const e = emptyList(bd, N).length;
+  return e >= 8 ? 0 : (e >= 5 ? 1 : 2);
+}
+function createGame(N, seedText){
+  const rng = mulberry32(seedFrom(seedText));
+  const g = {
+    N, board: [], score: 0, moves: 0, spawns: [], seed: seedText,
+    reset(){
+      this.board = Array.from({ length: N }, () => Array(N).fill(0));
+      this.score = 0; this.moves = 0; this.spawns = [];
+      this.spawn(); this.spawn();
+      return this;
+    },
+    snapshot(){ return this.board.map(r => r.slice()); },
+    spawn(){
+      const es = emptyList(this.board, N);
+      if (!es.length) return null;
+      const [r, c] = es[Math.floor(rng() * es.length)];
+      const v = rng() < 0.9 ? 2 : 4;
+      this.board[r][c] = v;
+      const s = { r, c, v };
+      this.spawns.push(s);
+      return s;
+    },
+    valid(){ return validMoves(this.board, N); },
+    gameOver(){ return this.valid().length === 0; },
+    apply(dir){
+      const res = applyMove(this.board, dir, N);
+      if (!res.moved) return { moved: false, gained: 0, merges: 0, spawn: null };
+      this.board = res.board; this.score += res.gained; this.moves++;
+      const spawn = this.spawn();
+      return { moved: true, gained: res.gained, merges: res.merges, spawn };
+    }
+  };
+  return g.reset();
+}
+/* ================================================================== */
+/*  2048 ENGINE END                                                     */
+/* ================================================================== */
+
+/* ======================== 基础设施 ======================== */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const pct1 = v => (v * 100).toFixed(1) + '%';
+
+let API = '(未连接)';
+let API_BASE = null;
+
+async function probeApi(){
+  const cands = [];
+  if (location.protocol === 'file:') cands.push('http://127.0.0.1:8771');
+  else { cands.push(''); cands.push('http://127.0.0.1:8771'); }
+  for (const c of cands){
+    try{
+      const r = await fetch(c + '/api/health', { method: 'GET', cache: 'no-store' });
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (j && j.ok){ API_BASE = c; API = (c || location.origin) + '/api'; return c; }
+    }catch(e){ /* 换下一个候选 */ }
+  }
+  return null;
+}
+async function call(path, body){
+  const opt = { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json' } };
+  if (body !== undefined) opt.body = JSON.stringify(body);
+  const r = await fetch(API_BASE + path, opt);
+  const txt = await r.text();
+  let j; try { j = JSON.parse(txt); } catch(e){ throw new Error('非 JSON 响应: ' + txt.slice(0, 200)); }
+  if (!j.ok) throw new Error(j.error || 'unknown error');
+  return j;
+}
+
+/* ======================== 状态 ======================== */
+const TILE = {
+  0:    ['#eef1f4', '#98a2b3'],
+  2:    ['#eee4da', '#6b5b4b'],
+  4:    ['#ede0c8', '#6b5b4b'],
+  8:    ['#f2b179', '#ffffff'],
+  16:   ['#f59563', '#ffffff'],
+  32:   ['#f67c5f', '#ffffff'],
+  64:   ['#f65e3b', '#ffffff'],
+  128:  ['#edcf72', '#6b5b4b'],
+  256:  ['#edcc61', '#6b5b4b'],
+  512:  ['#edc850', '#6b5b4b'],
+  1024: ['#edc53f', '#6b5b4b'],
+  2048: ['#edc22e', '#6b5b4b']
+};
+let N = 4;
+let G = createGame(N, '2048');
+let HISTORY = [];
+let LAST = null;
+let running = false, busy = false, gen = 0, freshIdx = -1;
+const STAT = { games: 0, moves: 0, best: 0, bestTile: 0, fb: 0, valid: 0,
+               mergeHit: 0, mergeTot: 0, crowdHit: 0, crowdTot: 0, latSum: 0, confSum: 0, errs: 0 };
+
+function tileStyle(v){
+  const t = TILE[v] || ['#3c3a32', '#ffffff'];
+  const d = String(v).length;
+  const fs = d <= 2 ? '26px' : d === 3 ? '23px' : d === 4 ? '19px' : '15px';
+  return `background:${t[0]};color:${t[1]};font-size:${fs}`;
+}
+function miniBoard(bd){
+  const cells = [];
+  for (let r = 0; r < bd.length; r++) for (let c = 0; c < bd[r].length; c++){
+    const v = bd[r][c];
+    cells.push(`<i style="${v ? 'background:' + (TILE[v] || ['#3c3a32'])[0] : ''}"></i>`);
+  }
+  return `<span class="mini">${cells.join('')}</span>`;
+}
+
+/* ======================== 渲染 ======================== */
+function renderBoard(highlight){
+  const g = G, cells = [];
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++){
+    const v = g.board[r][c];
+    const isNew = highlight && highlight.r === r && highlight.c === c;
+    cells.push(`<div class="tile${v ? '' : ' empty'}${isNew ? ' pop' : ''}" style="${v ? tileStyle(v) : ''}">${v || ''}</div>`);
+  }
+  const over = g.gameOver();
+  $('board').className = 'board' + (over ? ' over' : '');
+  $('board').innerHTML = cells.join('') + (over
+    ? `<div class="overlay"><div class="big">无路可走</div><div class="sm">最终得分 ${g.score} · ${g.moves} 步</div></div>` : '');
+  $('scoreV').textContent = g.score;
+  $('bestV').textContent = STAT.best;
+  $('maxV').textContent = maxTile(g.board);
+  $('turnTag').textContent = over ? 'game over' : (running ? 'running' : 'idle');
+  $('turnTag').className = 'tag' + (over ? ' bad' : (running ? ' ok' : ''));
+  $('boardSub').textContent = `${N} × ${N} · 种子 ${g.seed}`;
+}
+function flashGain(v){
+  const el = $('gainV');
+  if (!v) return;
+  el.textContent = '+' + v;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 700);
+}
+function renderStats(){
+  $('sGames').textContent = STAT.games;
+  $('sMoves').textContent = STAT.moves;
+  $('sBest').textContent = STAT.best;
+  $('sTile').textContent = STAT.bestTile || 0;
+  $('sFb').textContent = STAT.moves ? pct1(STAT.fb / STAT.moves) : '—';
+  $('sFbSub').textContent = `${STAT.fb} / ${STAT.moves}`;
+  $('sLat').textContent = STAT.moves ? Math.round(STAT.latSum / STAT.moves) : '—';
+  $('sMerge').textContent = STAT.mergeTot ? pct1(STAT.mergeHit / STAT.mergeTot) : '—';
+  $('sMergeSub').textContent = `${STAT.mergeHit} / ${STAT.mergeTot}`;
+  $('sCrowd').textContent = STAT.crowdTot ? pct1(STAT.crowdHit / STAT.crowdTot) : '—';
+  $('sCrowdSub').textContent = `${STAT.crowdHit} / ${STAT.crowdTot}`;
+  $('sConf').textContent = STAT.moves ? pct1(STAT.confSum / STAT.moves) : '—';
+}
+function entryHTML(h){
+  const probs = DIRS.map(d => {
+    const p = h.probs[d] ?? 0;
+    const sel = d === h.applied ? ' sel' : '';
+    return `<div class="pb${sel}"><span>${DIR_ARROW[d]}</span>
+      <span class="ptrack"><span class="pfill" style="width:${Math.min(100, p * 100).toFixed(1)}%"></span></span>
+      <span class="pv">${pct1(p)}</span></div>`;
+  }).join('');
+  const cls = h.moved ? (h.fallback ? ' fb' : '') : ' bad';
+  const badge = h.moved
+    ? (h.fallback ? `<span class="tag warn">模型选 ${esc(h.modelChoice)} 无效 → 回退 ${esc(h.applied)}</span>`
+                  : `<span class="tag ok">有效</span>`)
+    : `<span class="tag bad">无合法移动</span>`;
+  const truthBits = [];
+  if (h.truthMerge !== null) truthBits.push(`merge 真值 ${h.truthMerge ? 'yes' : 'no'} / 模型 ${h.modelMerge ? 'yes' : 'no'}(${h.mergeP.toFixed(3)})`);
+  if (h.truthCrowd !== null) truthBits.push(`crowding 真值 ${h.truthCrowd} / 模型 ${h.modelCrowd}`);
+  truthBits.push(`tokens ${h.tokens}`, `latency ${h.latencyMs} ms`);
+  return `<div class="he${cls}${h.i === freshIdx ? ' fresh' : ''}">
+    <div class="hhd">
+      <span class="hidx">#${h.i}</span>
+      <span class="hdir">${DIR_ARROW[h.applied] || '·'} ${esc(h.applied)}</span>
+      <span class="hp">模型 ${esc(h.modelChoice)} p=${pct1(h.modelP)}</span>
+      ${badge}
+      <span class="hgain">+${h.gained}</span>
+      ${h.spawn ? `<span class="hp">spawn ${h.spawn.v}</span>` : ''}
+      <span class="hmeta">${h.latencyMs} ms</span>
+    </div>
+    <div class="hbd">
+      <div class="minis">${miniBoard(h.before)}<span class="hidx">→</span>${miniBoard(h.after)}</div>
+      <div class="hbars">${probs}</div>
+    </div>
+    <div class="hnote">score ${h.scoreBefore} → ${h.score}　|　${truthBits.join('　|　')}</div>
+  </div>`;
+}
+function renderHistory(){
+  const only = !$('showAll').checked;
+  const list = only ? HISTORY.filter(h => h.fallback || !h.moved) : HISTORY;
+  const shown = list.slice(-80);
+  const box = $('hist');
+  if (!HISTORY.length){
+    box.innerHTML = '<div class="empty">点「开始自动对局」后，每一次模型抉择的完整留痕都会打印在这里。</div>';
+    $('histSub').textContent = '0 条';
+    return;
+  }
+  box.innerHTML = shown.map(entryHTML).join('')
+    + (list.length > shown.length ? `<div class="empty">… 仅显示最近 ${shown.length} 条；完整 ${list.length} 条见「导出 JSONL」</div>` : '');
+  $('histSub').textContent = only ? `${list.length} 条异常 / 共 ${HISTORY.length} 条` : `${HISTORY.length} 条`;
+  box.scrollTop = box.scrollHeight;
+}
+function renderLast(j, stateText){
+  LAST = { request: { state: stateText }, response: j };
+  const r = j.result, m = r.meta, a = r.answers;
+  $('lastOut').innerHTML = `
+    <div class="row" style="gap:6px;margin-bottom:8px">
+      <span class="tag">tokens ${m.tokens}</span>
+      <span class="tag">1 次前向 / ${m.n_questions} 问</span>
+      <span class="tag">${m.n_markers} markers</span>
+      <span class="tag">${m.latency_ms} ms</span>
+      <span class="tag${m.tokenizer_faithful ? ' ok' : ' warn'}">${esc(m.tokenizer)}</span>
+      <span class="tag${m.health.has_nan || m.health.has_inf ? ' bad' : ' ok'}">NaN=${m.health.has_nan} Inf=${m.health.has_inf}</span>
+    </div>
+    <div class="hint" style="margin:0 0 6px">choice ranking：${a.move.ranking.map(x => `${esc(x.key)} ${pct1(x.p)}`).join('　')}</div>
+    <details open><summary>喂给模型的状态文本（state）</summary><pre>${esc(stateText)}</pre></details>
+    <details><summary>完整响应 JSON</summary><pre>${esc(JSON.stringify(r, null, 2))}</pre></details>`;
+}
+
+/* ======================== 决策 ======================== */
+async function decide(){
+  const before = G.snapshot();
+  const scoreBefore = G.score;
+  const valid = validMoves(before, N);
+  const stateText = buildState(before, scoreBefore, N, valid);
+  const temp = parseFloat($('temp').value) || 1;
+
+  const t0 = performance.now();
+  const j = await call('/api/predict', {
+    state: stateText,
+    questions: buildQuestions(),
+    config: { temperature_mode: 'manual', temperature_manual: [temp, 1, 1] }
+  });
+  const wallMs = Math.round(performance.now() - t0);
+  const r = j.result, a = r.answers;
+
+  const modelChoice = a.move.choice;
+  const modelP = a.move.confidence;
+  const probs = a.move.probs || {};
+  const ranking = a.move.ranking || DIRS.map(d => ({ key: d, p: probs[d] || 0 }));
+
+  let applied = modelChoice, fallback = false;
+  if (!valid.includes(modelChoice)){
+    fallback = true;
+    const alt = ranking.find(x => valid.includes(x.key));
+    applied = alt ? alt.key : (valid[0] || modelChoice);
+  }
+
+  let mv = { moved: false, gained: 0, merges: 0, spawn: null };
+  if (valid.includes(applied)) mv = G.apply(applied);
+  const after = G.snapshot();
+
+  const truthMerge = canMerge(before, N);
+  const modelMerge = (a.merge_available?.noul ?? 0) >= 0.5;
+  const truthCrowd = truthCrowdingLevel(before, N);
+  const modelCrowd = a.crowding?.argmax_level ?? null;
+
+  STAT.moves++;
+  if (fallback) STAT.fb++;
+  STAT.latSum += r.meta.latency_ms;
+  STAT.confSum += modelP;
+  STAT.mergeTot++; if (modelMerge === truthMerge) STAT.mergeHit++;
+  STAT.crowdTot++; if (modelCrowd === truthCrowd) STAT.crowdHit++;
+  STAT.best = Math.max(STAT.best, G.score);
+  STAT.bestTile = Math.max(STAT.bestTile, maxTile(after));
+
+  const h = {
+    i: HISTORY.length + 1,
+    before, after,
+    modelChoice, modelP, probs, ranking,
+    applied, fallback, moved: mv.moved, gained: mv.gained, spawn: mv.spawn,
+    scoreBefore, score: G.score,
+    truthMerge, modelMerge, mergeP: a.merge_available?.noul ?? 0,
+    truthCrowd, modelCrowd,
+    tokens: r.meta.tokens, latencyMs: r.meta.latency_ms, wallMs,
+    temperature: temp, ts: Date.now()
+  };
+  HISTORY.push(h);
+  freshIdx = h.i;
+  return { h, raw: r, stateText };
+}
+
+async function doStep(){
+  if (busy) return;
+  if (G.gameOver()){ renderBoard(); return; }
+  busy = true;
+  $('stepBtn').disabled = true;
+  try{
+    const { h, raw, stateText } = await decide();
+    renderBoard(h.spawn);
+    flashGain(h.gained);
+    renderStats();
+    renderHistory();
+    renderLast({ ok: true, result: raw }, stateText);
+    $('errBox').style.display = 'none';
+  }catch(e){
+    STAT.errs++;
+    const box = $('errBox');
+    box.style.display = 'block';
+    box.textContent = '推理失败: ' + e.message;
+    running = false;
+  }finally{
+    busy = false;
+    $('stepBtn').disabled = false;
+    syncButtons();
+  }
+}
+
+async function runLoop(){
+  const my = ++gen;
+  running = true;
+  syncButtons();
+  renderBoard();
+  while (running && my === gen){
+    if (G.gameOver()){
+      STAT.games++;
+      renderStats();
+      renderBoard();
+      if (!$('autoNew').checked){ running = false; break; }
+      await sleep(650);
+      if (!running || my !== gen) break;
+      newGame(true);
+      continue;
+    }
+    const cap = parseInt($('maxSteps').value, 10) || 0;
+    if (cap && G.moves >= cap){ running = false; break; }
+    await doStep();
+    if (!running || my !== gen) break;
+    const d = parseInt($('delay').value, 10) || 0;
+    if (d) await sleep(d);
+  }
+  running = false;
+  syncButtons();
+  renderBoard();
+}
+
+function syncButtons(){
+  const b = $('runBtn');
+  if (running){ b.textContent = '⏸ 暂停'; b.classList.remove('primary'); }
+  else { b.textContent = '▶ 开始自动对局'; b.classList.add('primary'); }
+  $('runBtn').disabled = false;
+}
+function stopLoop(){ running = false; gen++; syncButtons(); renderBoard(); }
+function newGame(keepStats){
+  G = createGame(N, $('seed').value || '2048');
+  if (!keepStats) { HISTORY = []; STAT.games = 0; STAT.moves = 0; STAT.best = 0; STAT.bestTile = 0;
+    STAT.fb = 0; STAT.mergeHit = 0; STAT.mergeTot = 0; STAT.crowdHit = 0; STAT.crowdTot = 0;
+    STAT.latSum = 0; STAT.confSum = 0; STAT.errs = 0; }
+  freshIdx = -1;
+  renderBoard(); renderStats(); renderHistory();
+  $('errBox').style.display = 'none';
+}
+
+/* ======================== 导出 ======================== */
+function jsonl(){
+  return HISTORY.map(h => JSON.stringify({
+    step: h.i, applied: h.applied, model_choice: h.modelChoice, model_p: h.modelP,
+    fallback: h.fallback, moved: h.moved, gained: h.gained,
+    spawn: h.spawn, score_before: h.scoreBefore, score_after: h.score,
+    probs: h.probs, ranking: h.ranking,
+    truth: { merge_available: h.truthMerge, crowding_level: h.truthCrowd },
+    model: { merge_available: h.modelMerge, merge_p: h.mergeP, crowding_argmax: h.modelCrowd },
+    tokens: h.tokens, latency_ms: h.latencyMs, temperature: h.temperature,
+    board_before: h.before, board_after: h.after, ts: h.ts
+  })).join('\n');
+}
+function copyText(t){
+  const done = () => { const b = $('copyBtn'); b.textContent = '已复制'; setTimeout(() => b.textContent = '复制', 1200); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, () => fallbackCopy(t, done));
+  else fallbackCopy(t, done);
+}
+function fallbackCopy(t, done){
+  const ta = document.createElement('textarea');
+  ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch(e){}
+  document.body.removeChild(ta); done();
+}
+
+/* ======================== 启动 ======================== */
+async function boot(){
+  renderBoard(); renderStats(); renderHistory();
+
+  // 控件先绑定，后端不可用时页面其余部分仍可用
+  $('delay').oninput = e => $('delayV').textContent = e.target.value + ' ms';
+  $('temp').oninput = e => $('tempV').textContent = (+e.target.value).toFixed(2);
+  $('runBtn').onclick = () => { if (running) stopLoop(); else runLoop(); };
+  $('stepBtn').onclick = () => { if (!busy) doStep(); };
+  $('resetBtn').onclick = () => { stopLoop(); newGame(false); };
+  $('reseed').onclick = () => { stopLoop(); $('seed').value = String(Math.floor(Math.random() * 1e6)); newGame(false); };
+  $('seed').onchange = () => { stopLoop(); newGame(false); };
+  $('clrBtn').onclick = () => { HISTORY = []; freshIdx = -1; renderHistory(); };
+  $('showAll').onchange = renderHistory;
+  $('expBtn').onclick = () => {
+    if (!HISTORY.length) return;
+    const blob = new Blob([jsonl()], { type: 'application/x-ndjson' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `laya_2048_decisions_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.jsonl`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  };
+  $('copyBtn').onclick = () => copyText(HISTORY.length ? jsonl() : '（暂无决策历史）');
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.code === 'Space'){ e.preventDefault(); if (running) stopLoop(); else runLoop(); }
+    if ((e.key === 's' || e.key === 'S') && !running) doStep();
+    if (e.key === 'r' || e.key === 'R'){ stopLoop(); newGame(false); }
+  });
+
+  const base = await probeApi();
+  if (base === null){
+    $('badges').innerHTML = '<span class="badge"><span class="dot bad"></span>后端未连接</span>';
+    const b = $('banner');
+    b.className = 'banner bad';
+    $('bannerText').innerHTML = `<b>未探测到 <code>127.0.0.1:8771</code> 的 Laya 决策服务。</b><br>
+      在本文件同目录（<code>Downloads/jev</code>）执行：<br>
+      <code>python laya_verify.py --port 8771</code><br>
+      启动后刷新本页即可。页面已就绪，只等后端。`;
+    $('runBtn').disabled = true; $('stepBtn').disabled = true;
+    return;
+  }
+  try {
+    const s = await call('/api/status');
+    const m = s.model, t = s.tokenizer;
+    $('badges').innerHTML = `
+      <span class="badge"><span class="dot ok"></span>后端 <b>${esc(API)}</b></span>
+      <span class="badge">权重 <b>${esc(m.path)}</b></span>
+      <span class="badge">${(m.params / 1e6).toFixed(1)}M params · ${m.layers}层 + ${m.head_layers}层决策头</span>
+      <span class="badge">tokenizer <b>${esc(t.mode)}</b></span>
+      <span class="badge"><span class="dot ${t.faithful ? 'ok' : 'warn'}"></span>${t.faithful ? '真实词表' : '词表缺失 → 语义 BLOCKED'}</span>`;
+    const b = $('banner');
+    if (t.faithful){
+      b.className = 'banner ok';
+      $('bannerText').innerHTML = '<b>官方词表已加载。</b>模型看到的是真实语义，四方向的概率排序具备实际含义，本页的抉择留痕即真实决策链路。';
+    } else {
+      b.className = 'banner';
+      $('bannerText').innerHTML = `<b>词表为字节级兜底（vocab=${t.vocab}，非官方 256k）→ 模型看不到语义。</b><br>
+        实测四方向 logits 差异仅 ~1e-2，softmax 后接近 <b>均匀随机（各 ≈25%）</b>，noul ≈ 0.50。
+        因此本页验证的是<b>「决策链路闭环 + 抉择全程留痕」</b>，不是棋力 —— 模型会随机走来走去并很快堵死，这是预期结果，不是 bug。<br>
+        把官方 <code>tokenizer.json</code> 放到权重同目录并重启后端，即自动切为真实语义决策。`;
+    }
+  }catch(e){ /* status 失败不阻塞对局 */ }
+}
+boot();
+</script>
+</body>
+</html>

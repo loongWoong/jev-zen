@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Laya 决策模型 · 本地验证台</title>
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --panel2:#fafbfc; --line:#e4e7ec; --line2:#eef1f4;
+  --text:#1d2430; --muted:#667085; --dim:#98a2b3;
+  --accent:#2f6fed; --accent-weak:#eaf1fe;
+  --ok:#0d9488; --ok-weak:#e6f6f3;
+  --warn:#c2740a; --warn-weak:#fdf3e3;
+  --bad:#d64545; --bad-weak:#fdecec;
+  --info:#5b6b7c; --info-weak:#eef1f4;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --radius:10px; --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1480px;margin:0 auto;padding:20px 22px 64px}
+
+/* ---------- header ---------- */
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:14px}
+h1{font-size:19px;font-weight:650;margin:0;letter-spacing:.2px}
+h1 span{color:var(--muted);font-weight:400;font-size:13px;margin-left:8px}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.badge{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
+  background:var(--panel);border:1px solid var(--line);font-size:12px;color:var(--muted);
+  font-family:var(--mono);white-space:nowrap;
+}
+.badge b{color:var(--text);font-weight:600}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--dim);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+
+/* ---------- banner ---------- */
+.banner{
+  border:1px solid #f0d9ad;background:var(--warn-weak);border-radius:var(--radius);
+  padding:11px 14px;margin-bottom:14px;font-size:13px;color:#7a4a05;display:flex;gap:10px;
+}
+.banner .ic{font-size:15px;line-height:1.4;flex:none}
+.banner b{color:#6b3f03}
+.banner code{font-family:var(--mono);background:#fff8ec;border:1px solid #f0d9ad;border-radius:4px;padding:1px 5px;font-size:12px}
+.banner.hidden{display:none}
+
+/* ---------- grid ---------- */
+.grid{display:grid;grid-template-columns:minmax(380px,1fr) minmax(460px,1.15fr);gap:16px;align-items:start}
+@media(max-width:1080px){.grid{grid-template-columns:1fr}}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+/* ---------- card ---------- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card>.hd{
+  display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--line2);
+  font-size:13px;font-weight:600;
+}
+.card>.hd .sub{font-weight:400;color:var(--muted);font-size:12px;font-family:var(--mono)}
+.card>.hd .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+.card>.bd{padding:12px 13px}
+.card .bd+.bd{border-top:1px solid var(--line2)}
+
+/* ---------- controls ---------- */
+label.lb{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+input[type=text],input[type=number],select,textarea{
+  width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);
+  border-radius:7px;padding:7px 9px;font-size:13px;font-family:inherit;outline:none;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px var(--accent-weak)}
+textarea{font-family:var(--mono);font-size:12.5px;line-height:1.55;resize:vertical;min-height:96px}
+select{cursor:pointer}
+button{
+  font-family:inherit;font-size:13px;border-radius:7px;border:1px solid var(--line);
+  background:var(--panel);color:var(--text);padding:7px 12px;cursor:pointer;white-space:nowrap;
+}
+button:hover{border-color:var(--dim);background:var(--panel2)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{background:#2560d8;border-color:#2560d8}
+button.primary:disabled{opacity:.55;cursor:progress}
+button.mini{padding:3px 8px;font-size:12px}
+button.ghost{background:transparent;border-color:transparent;color:var(--muted);padding:3px 7px;font-size:12px}
+button.ghost:hover{background:var(--info-weak);border-color:transparent;color:var(--text)}
+.row{display:flex;gap:8px;align-items:flex-end}
+.row>*{min-width:0}
+.grow{flex:1}
+.hint{font-size:12px;color:var(--dim);margin-top:5px;line-height:1.5}
+.hint code{font-family:var(--mono);background:var(--info-weak);border-radius:4px;padding:1px 4px}
+
+/* ---------- question editor ---------- */
+.q{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:9px;background:var(--panel2)}
+.q:last-child{margin-bottom:0}
+.q .qh{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.q .qh .idx{font-family:var(--mono);font-size:12px;color:var(--dim);flex:none}
+.q .qh input{flex:1}
+.q .qh select{width:112px;flex:none}
+.q .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:520px){.q .grid2{grid-template-columns:1fr}}
+.tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:4px;
+  background:var(--info-weak);color:var(--info);border:1px solid var(--line)}
+.tag.choice{background:var(--accent-weak);color:#1d4ed8;border-color:#d5e3fd}
+.tag.score{background:#f3ecfe;color:#6d28d9;border-color:#e6d9fc}
+.tag.noul{background:var(--ok-weak);color:#0f766e;border-color:#cdeee9}
+
+/* ---------- results ---------- */
+.res{border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin-bottom:10px;background:var(--panel)}
+.res:last-child{margin-bottom:0}
+.res .rh{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.res .rh .qid{font-family:var(--mono);font-size:13px;font-weight:600}
+.res .big{font-size:24px;font-weight:680;letter-spacing:-.3px;margin:2px 0 2px}
+.res .big .unit{font-size:13px;font-weight:400;color:var(--muted);margin-left:4px}
+.res .sub{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.bars{display:flex;flex-direction:column;gap:5px;margin-top:8px}
+.bar{display:grid;grid-template-columns:minmax(88px,auto) 1fr 62px;gap:8px;align-items:center;font-size:12.5px}
+.bar .lab{font-family:var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar.top .lab{color:var(--text);font-weight:600}
+.bar .track{height:16px;background:var(--info-weak);border-radius:4px;overflow:hidden;position:relative}
+.bar .fill{height:100%;background:#c3ccd7;border-radius:4px;transition:width .25s ease}
+.bar.top .fill{background:var(--accent)}
+.bar .val{font-family:var(--mono);text-align:right;color:var(--muted)}
+.bar.top .val{color:var(--text);font-weight:600}
+.meter{height:22px;background:var(--info-weak);border-radius:5px;overflow:hidden;margin-top:8px;display:flex}
+.meter .yes{background:var(--ok)}
+.meter .no{background:#d9dee5}
+.meter-lg{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);font-family:var(--mono);margin-top:3px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12.5px;margin-top:8px}
+.kv .k{color:var(--muted);font-family:var(--mono)}
+.kv .v{font-family:var(--mono);word-break:break-all}
+details{margin-top:9px}
+summary{cursor:pointer;font-size:12px;color:var(--muted);outline:none;user-select:none}
+summary:hover{color:var(--text)}
+details pre{
+  margin:8px 0 0;padding:9px 11px;background:#1d2430;color:#dfe6ef;border-radius:7px;
+  font-family:var(--mono);font-size:11.5px;line-height:1.55;overflow:auto;max-height:340px;white-space:pre-wrap;word-break:break-all;
+}
+details pre.light{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);flex-wrap:wrap;padding:0 4px}
+.tab{
+  padding:9px 13px;font-size:13px;color:var(--muted);cursor:pointer;border:none;background:none;
+  border-bottom:2px solid transparent;border-radius:0;
+}
+.tab:hover{color:var(--text);background:transparent;border-color:transparent}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.pane{display:none;padding:13px}
+.pane.on{display:block}
+
+/* ---------- report table ---------- */
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:11.5px;text-transform:uppercase;
+   letter-spacing:.4px;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid var(--line2);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.st{width:74px}
+td.grp{width:104px;color:var(--muted);font-family:var(--mono);font-size:11.5px}
+td.nm{width:210px}
+td.dt{color:var(--muted);font-family:var(--mono);font-size:11.5px;white-space:pre-wrap;word-break:break-word}
+.status{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;
+  padding:1px 6px;border-radius:4px;letter-spacing:.3px}
+.status.PASS{background:var(--ok-weak);color:var(--ok)}
+.status.FAIL{background:var(--bad-weak);color:var(--bad)}
+.status.WARN{background:var(--warn-weak);color:var(--warn)}
+.status.BLOCKED{background:var(--warn-weak);color:var(--warn)}
+.status.INFO{background:var(--info-weak);color:var(--info)}
+.summary{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.summary .s{flex:1;min-width:104px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:8px;padding:9px 11px}
+.summary .s .n{font-size:20px;font-weight:680;font-family:var(--mono);line-height:1.2}
+.summary .s .t{font-size:11.5px;color:var(--muted)}
+.verdict{margin-top:11px;padding:10px 12px;border-radius:8px;background:var(--panel2);
+  border:1px solid var(--line);font-size:12.5px;line-height:1.65}
+.empty{color:var(--dim);font-size:13px;padding:18px 4px;text-align:center}
+.err{background:var(--bad-weak);border:1px solid #f5cdcd;color:#9b2c2c;border-radius:8px;
+  padding:10px 12px;font-size:12.5px;font-family:var(--mono);white-space:pre-wrap;margin-bottom:10px}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid rgba(255,255,255,.45);
+  border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px;margin-right:5px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Laya 决策模型 · 本地验证台<span>non-autoregressive System 1 · typed decisions</span></h1>
+    <div class="badges" id="badges"><span class="badge">连接中…</span></div>
+  </header>
+
+  <div class="banner" id="banner"><span class="ic">⚠</span><div id="bannerText">正在读取权重…</div></div>
+
+  <div class="grid">
+    <!-- ============ 左：输入 ============ -->
+    <div class="col">
+      <div class="card">
+        <div class="hd">① State<span class="sub">text / email / ticket / JSON</span>
+          <div class="right">
+            <select id="presetSel" style="width:auto;font-size:12px;padding:4px 7px"></select>
+            <button class="mini" id="loadPreset">载入</button>
+          </div>
+        </div>
+        <div class="bd">
+          <textarea id="stateBox" spellcheck="false"></textarea>
+          <div class="hint">JSON 对象会渲染为 <code>key: value</code> 行；也可以直接写纯文本。这是模型的唯一输入。</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd">② Typed Questions
+          <div class="right">
+            <button class="mini" id="addQ">+ 添加</button>
+            <button class="mini" id="resetQ">恢复模型卡示例</button>
+          </div>
+        </div>
+        <div class="bd" id="qList"></div>
+      </div>
+
+      <div class="card">
+        <div class="hd">③ 推断项 / 运行参数<span class="sub">权重无 config.json</span></div>
+        <div class="bd">
+          <div class="q grid2" style="background:transparent;border:none;padding:0;margin-bottom:10px">
+            <div><label class="lb">max_len（context）</label><input type="number" id="cfgMaxLen" min="32" max="8192" step="16"></div>
+            <div><label class="lb">attention 调度</label>
+              <select id="cfgAttention"><option value="global">global（默认）</option><option value="alternating3">alternating3（每3层1层global + 窗128）</option></select>
+            </div>
+            <div><label class="lb">mlp gate 拆分</label>
+              <select id="cfgGate"><option value="first">first（前1152=gate）</option><option value="interleaved">interleaved（奇偶交错）</option></select>
+            </div>
+            <div><label class="lb">head 激活</label>
+              <select id="cfgHeadAct"><option value="gelu">gelu（默认）</option><option value="gelu_tanh">gelu_tanh</option><option value="relu">relu</option></select>
+            </div>
+            <div><label class="lb">type_emb 注入阶段</label>
+              <select id="cfgTypeStage"><option value="input">input（编码前，默认）</option><option value="pre_head">pre_head（编码后）</option></select>
+            </div>
+            <div><label class="lb">温度</label>
+              <select id="cfgTemp"><option value="checkpoint">checkpoint（实测 [1,1,1]）</option><option value="off">off（T=1）</option><option value="manual">manual</option></select>
+            </div>
+            <div id="tempManualWrap" style="display:none;grid-column:1/-1">
+              <label class="lb">manual T（choice / score / noul）</label>
+              <div class="row"><input type="number" id="t0" step="0.05" min="0.05" style="width:80px"><input type="number" id="t1" step="0.05" min="0.05" style="width:80px"><input type="number" id="t2" step="0.05" min="0.05" style="width:80px"></div>
+              <div class="hint">模型卡：refit 温度后 mean ECE 0.466 → 0.081。T&lt;1 更尖锐，T&gt;1 更平。</div>
+            </div>
+          </div>
+          <div class="row">
+            <button class="primary grow" id="runBtn">运行单次前向（Ctrl+Enter）</button>
+          </div>
+          <div class="hint" id="runHint">一次前向回答全部 typed questions。</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 右：输出 ============ -->
+    <div class="col">
+      <div class="card">
+        <div class="hd">④ 结果<span class="sub" id="resSub">—</span></div>
+        <div class="bd" id="results"><div class="empty">点击「运行单次前向」</div></div>
+      </div>
+
+      <div class="card">
+        <div class="tabs">
+          <button class="tab on" data-pane="p-verify">验证报告</button>
+          <button class="tab" data-pane="p-prompt">Token 预览</button>
+          <button class="tab" data-pane="p-bench">延迟基准</button>
+          <button class="tab" data-pane="p-assume">推断项</button>
+          <button class="tab" data-pane="p-ledger">权重台账</button>
+        </div>
+        <div class="pane on" id="p-verify">
+          <div class="row" style="margin-bottom:11px">
+            <button id="verifyBtn" class="grow">运行验证（27 项，约 25 秒）</button>
+          </div>
+          <div id="verifyOut"><div class="empty">后端已内置权重完整性、前向数值健康、确定性与不变量、延迟基准、词表保真度等检查。<br>点上方按钮执行。</div></div>
+        </div>
+        <div class="pane" id="p-prompt">
+          <div class="hint" style="margin:0 0 9px">实际喂给模型的 token 序列（先运行一次推理即可看到）。请求体与 marker 位置是理解评分机制的关键。</div>
+          <div id="promptOut"><div class="empty">—</div></div>
+        </div>
+        <div class="pane" id="p-bench">
+          <div class="row" style="margin-bottom:11px"><button id="benchBtn" class="grow">运行延迟基准（1 / 5 / 10 问题）</button></div>
+          <div id="benchOut"><div class="empty">后端为纯 CPU / numpy fp32。模型卡的 32.8 ms 是 T4 GPU 数值，不可直接对比。</div></div>
+        </div>
+        <div class="pane" id="p-assume">
+          <div class="hint" style="margin:0 0 9px">以下项**无法**从权重文件确定，来源为有据推断；已经过不变量检验（见验证报告）。</div>
+          <div id="assumeOut"><div class="empty">—</div></div>
+        </div>
+        <div class="pane" id="p-ledger">
+          <div id="ledgerOut"><div class="empty">—</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================ 基础设施 ============================ */
+// file:// 直接打开时需指向本地后端；被后端托管时用同源。
+const API = (location.protocol === 'file:') ? 'http://127.0.0.1:8771' : '';
+
+async function call(path, body){
+  const opt = { method: body === undefined ? 'GET' : 'POST',
+                headers: {'Content-Type':'application/json'} };
+  if (body !== undefined) opt.body = JSON.stringify(body);
+  const r = await fetch(API + path, opt);
+  const txt = await r.text();
+  let j; try { j = JSON.parse(txt); } catch(e){ throw new Error('非 JSON 响应: ' + txt.slice(0,300)); }
+  if (!j.ok) throw new Error(j.error || 'unknown error');
+  return j;
+}
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pct = v => (v*100).toFixed(1) + '%';
+const f6 = v => (typeof v === 'number' ? v.toFixed(6) : v);
+
+/* ============================ 状态 ============================ */
+let STATUS = null;
+let PRESETS = [];
+let QUESTIONS = [];   // {id,type,instructions,criteriaText}
+
+function qToPayload(q){
+  let crit = null;
+  if (q.type === 'choice'){
+    crit = {};
+    q.criteriaText.split('\n').map(s=>s.trim()).filter(Boolean).forEach(line=>{
+      const m = line.match(/^([^=:]+)[=:](.*)$/);
+      if (m) crit[m[1].trim()] = m[2].trim(); else crit[line] = '';
+    });
+  } else if (q.type === 'score'){
+    crit = q.criteriaText.split('\n').map(s=>s.trim()).filter(Boolean);
+  }
+  return { id: q.id, type: q.type, instructions: q.instructions, criteria: crit };
+}
+function criteriaToText(type, crit){
+  if (type === 'choice'){
+    if (!crit) return '';
+    return Object.entries(crit).map(([k,v]) => k + ' = ' + v).join('\n');
+  }
+  if (type === 'score') return (crit||[]).join('\n');
+  return '';
+}
+
+/* ============================ Question 编辑器 ============================ */
+function renderQuestions(){
+  const box = $('qList');
+  if (!QUESTIONS.length){ box.innerHTML = '<div class="empty">还没有问题，点右上「+ 添加」</div>'; return; }
+  box.innerHTML = QUESTIONS.map((q,i)=>`
+    <div class="q" data-i="${i}">
+      <div class="qh">
+        <span class="idx">#${i+1}</span>
+        <input type="text" class="q-id" value="${esc(q.id)}" placeholder="question id" />
+        <select class="q-type">
+          <option value="choice"${q.type==='choice'?' selected':''}>choice</option>
+          <option value="score"${q.type==='score'?' selected':''}>score</option>
+          <option value="noul"${q.type==='noul'?' selected':''}>noul</option>
+        </select>
+        <button class="ghost q-del" title="删除">✕</button>
+      </div>
+      <label class="lb">instructions</label>
+      <input type="text" class="q-ins" value="${esc(q.instructions)}" placeholder="模型看到的问题描述" />
+      <div style="height:8px"></div>
+      <label class="lb">criteria <span class="tag ${q.type}">${q.type}</span></label>
+      ${q.type==='noul'
+        ? `<input type="text" value="自动：No / Yes（二值 softmax，返回 P(yes)）" disabled />`
+        : `<textarea class="q-crit" spellcheck="false" placeholder="${q.type==='choice'?'每行一个选项：key = 描述':'每行一个有序等级（从低到高）'}"></textarea>`}
+      <div class="hint">${q.type==='choice'?'返回 argmax 选项 + confidence。':q.type==='score'?'返回有序等级的期望值 Σ i·pᵢ 与满量程 N-1。':'返回 P(yes)，对应模型卡的 noul primitive。'}</div>
+    </div>`).join('');
+  // 填值（textarea 不能用属性设值）
+  box.querySelectorAll('.q').forEach(el=>{
+    const i = +el.dataset.i, q = QUESTIONS[i];
+    const c = el.querySelector('.q-crit'); if (c) c.value = q.criteriaText || '';
+    el.querySelector('.q-id').oninput = e => q.id = e.target.value;
+    el.querySelector('.q-ins').oninput = e => q.instructions = e.target.value;
+    if (c) c.oninput = e => q.criteriaText = e.target.value;
+    el.querySelector('.q-type').onchange = e => { q.type = e.target.value; renderQuestions(); };
+    el.querySelector('.q-del').onclick = () => { QUESTIONS.splice(i,1); renderQuestions(); };
+  });
+}
+
+/* ============================ 结果渲染 ============================ */
+function renderResults(res){
+  const out = [];
+  for (const [qid, a] of Object.entries(res.answers)){
+    if (a.type === 'choice'){
+      const rank = a.ranking || [];
+      out.push(`<div class="res">
+        <div class="rh"><span class="tag choice">choice</span><span class="qid">${esc(qid)}</span>
+          <span class="sub" style="margin-left:auto">T=${a.temperature}</span></div>
+        <div class="big">${esc(a.choice)}<span class="unit">confidence ${f6(a.confidence)}</span></div>
+        <div class="bars">${rank.map((r,i)=>`
+          <div class="bar ${i===0?'top':''}">
+            <span class="lab" title="${esc(r.key)}">${esc(r.key)}</span>
+            <span class="track"><span class="fill" style="width:${(r.p*100).toFixed(2)}%"></span></span>
+            <span class="val">${f6(r.p)}</span>
+          </div>`).join('')}</div>
+        <details><summary>原始 logits</summary><pre class="light">${esc(JSON.stringify(a.logits,null,2))}</pre></details>
+      </div>`);
+    } else if (a.type === 'score'){
+      const mx = Math.max(...a.probs);
+      out.push(`<div class="res">
+        <div class="rh"><span class="tag score">score</span><span class="qid">${esc(qid)}</span>
+          <span class="sub" style="margin-left:auto">T=${a.temperature} · 归一化熵 ${a.entropy_norm}</span></div>
+        <div class="big">${a.score}<span class="unit">/ ${a.max}</span></div>
+        <div class="bars">${a.probs.map((p,i)=>`
+          <div class="bar ${i===a.argmax_level?'top':''}">
+            <span class="lab" title="${esc(a.levels[i])}">[${i}] ${esc(a.levels[i])}</span>
+            <span class="track"><span class="fill" style="width:${(p*100).toFixed(2)}%"></span></span>
+            <span class="val">${f6(p)}</span>
+          </div>`).join('')}</div>
+        <div class="hint">score = Σ i·pᵢ（有序等级期望值）；argmax level = ${a.argmax_level}</div>
+      </div>`);
+    } else {
+      const y = a.noul;
+      out.push(`<div class="res">
+        <div class="rh"><span class="tag noul">noul</span><span class="qid">${esc(qid)}</span>
+          <span class="sub" style="margin-left:auto">T=${a.temperature}</span></div>
+        <div class="big">${f6(y)}<span class="unit">P(yes) = ${pct(y)}</span></div>
+        <div class="meter"><span class="yes" style="width:${(y*100).toFixed(2)}%"></span><span class="no" style="width:${((1-y)*100).toFixed(2)}%"></span></div>
+        <div class="meter-lg"><span>yes ${f6(y)}</span><span>no ${f6(a.p_no)}</span></div>
+      </div>`);
+    }
+  }
+  const m = res.meta, r = res.routing;
+  out.push(`<div class="res" style="background:var(--panel2)">
+    <div class="rh"><span class="tag">routing</span><span class="sub">脚本检测 → checkpoint 选择</span></div>
+    <div class="kv">
+      <span class="k">model</span><span class="v">${esc(r.model)}${r.note?`　<span style="color:var(--warn)">（${esc(r.note)}）</span>`:''}</span>
+      <span class="k">script</span><span class="v">${esc(r.script)}　${esc(JSON.stringify(r.script_ratios))}</span>
+      <span class="k">reason</span><span class="v">${esc(r.reason)}</span>
+    </div>
+    <div class="kv" style="border-top:1px solid var(--line);padding-top:8px;margin-top:9px">
+      <span class="k">tokens</span><span class="v">${m.tokens}${m.truncated?'　(state 已截断)':''}</span>
+      <span class="k">forward</span><span class="v">1 次前向回答 ${m.n_questions} 个问题 · ${m.n_markers} 个 option marker</span>
+      <span class="k">latency</span><span class="v">${m.latency_ms} ms　(${m.ms_per_question} ms/问题)</span>
+      <span class="k">tokenizer</span><span class="v">${esc(m.tokenizer)}${m.tokenizer_faithful?'':'　<span style="color:var(--warn)">非官方词表 → 语义无效</span>'}</span>
+      <span class="k">health</span><span class="v">NaN=${m.health.has_nan} Inf=${m.health.has_inf} hidden_absmax=${m.health.hidden_absmax.toFixed(2)}</span>
+      <span class="k">act/escalate</span><span class="v">${f6(res.act.act)} / ${f6(res.act.escalate)}　<span class="dim">(act_head 输入特征为推断项)</span></span>
+    </div>
+  </div>`);
+  $('results').innerHTML = out.join('');
+  $('resSub').textContent = `${m.tokens} tokens · ${m.latency_ms} ms · 1 次前向`;
+}
+
+/* ============================ 面板渲染 ============================ */
+function renderPrompt(res){
+  const p = res.prompt;
+  const rows = p.spans.map(s=>`<tr><td class="grp">${esc(s.type)}</td><td class="nm">${esc(s.id)}</td>
+    <td class="dt">${s.options.map(o=>esc(o.key)).join(' | ')}</td>
+    <td class="dt">${s.token_start} → ${s.token_start + s.n_tokens}</td></tr>`).join('');
+  $('promptOut').innerHTML = `
+    <div class="hint" style="margin:0 0 9px">平均每选项 <b>${p.tokens_per_option}</b> tokens
+      （模型卡的 head_max_len 预算：多语 256；选项过多会摊薄到不足以区分）</div>
+    <details open><summary>解码后的提示串</summary><pre>${esc(p.preview)}</pre></details>
+    <table style="margin-top:11px"><thead><tr><th>primitive</th><th>question</th><th>选项</th><th>token 区间</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+function renderBench(b){
+  const rows = Object.entries(b).map(([k,v])=>`<tr><td class="nm">${esc(k)}</td><td class="dt">${v.tokens}</td>
+    <td class="dt">${v.latency_ms} ms</td><td class="dt">${v.ms_per_question} ms</td></tr>`).join('');
+  $('benchOut').innerHTML = `<table><thead><tr><th>批量</th><th>tokens</th><th>单次前向</th><th>每问题</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function renderAssumptions(a){
+  $('assumeOut').innerHTML = `<table><thead><tr><th>项</th><th>取值</th><th>依据 / 为何无法确定</th></tr></thead><tbody>${
+    a.map(x=>`<tr><td class="nm">${esc(x.item)}</td><td class="dt">${esc(x.value)}</td><td class="dt">${esc(x.why)}</td></tr>`).join('')}</tbody></table>`;
+}
+function renderLedger(s){
+  const m = s.model, t = s.tokenizer;
+  $('ledgerOut').innerHTML = `<div class="kv">
+    <span class="k">file</span><span class="v">${esc(m.path)}　${(m.bytes/1e6).toFixed(1)} MB</span>
+    <span class="k">tensors</span><span class="v">${m.tensors}　dtypes: ${esc(JSON.stringify(m.dtypes))}</span>
+    <span class="k">params</span><span class="v">${m.params.toLocaleString()}　(${(m.params/1e6).toFixed(1)}M)</span>
+    <span class="k">encoder</span><span class="v">${m.layers} 层（layer0 attn_norm 缺失 = ModernBERT 指纹）</span>
+    <span class="k">head</span><span class="v">${m.head_layers} 层 · act_head 输入维 ${m.act_in_dim}（768 + 4）</span>
+    <span class="k">scorer</span><span class="v">索引跳号=${m.scorer_gap} → 0:LayerNorm, 1:Linear, 2:GELU, 3:Linear</span>
+    <span class="k">temperature</span><span class="v">${esc(JSON.stringify(m.temperature_checkpoint))}　未拟合</span>
+    <span class="k">tokenizer</span><span class="v">${esc(t.mode)}　vocab=${t.vocab}　faithful=${t.faithful}</span>
+    <span class="k">special ids</span><span class="v">${esc(JSON.stringify(t.special_ids))}</span>
+    <span class="k">cache</span><span class="v">${(s.cache_bytes/1e6).toFixed(0)} MB（fp32 绑定量）</span>
+    <span class="k">runtime</span><span class="v">Python ${esc(s.python)} · numpy ${esc(s.numpy)} · 无 torch</span>
+  </div>
+  <details><summary>当前运行参数</summary><pre class="light">${esc(JSON.stringify(s.config,null,2))}</pre></details>`;
+}
+function renderReport(rep){
+  const s = rep.summary;
+  const groups = {};
+  rep.checks.forEach(c => (groups[c.group] = groups[c.group] || []).push(c));
+  const body = Object.entries(groups).map(([g, cs]) =>
+    cs.map((c,i)=>`<tr>
+      <td class="st">${i===0?`<span class="status ${c.status}">${c.status}</span>`:''}</td>
+      <td class="grp">${i===0?esc(g):''}</td>
+      <td class="nm">${esc(c.name)}</td>
+      <td class="dt">${esc(c.detail)}</td></tr>`).join('')).join('');
+  $('verifyOut').innerHTML = `
+    <div class="summary">
+      <div class="s"><div class="n" style="color:var(--ok)">${s.pass}</div><div class="t">PASS</div></div>
+      <div class="s"><div class="n" style="color:var(--bad)">${s.fail}</div><div class="t">FAIL</div></div>
+      <div class="s"><div class="n" style="color:var(--warn)">${s.blocked+s.warn}</div><div class="t">BLOCKED / WARN</div></div>
+      <div class="s"><div class="n" style="color:var(--info)">${s.info}</div><div class="t">INFO</div></div>
+      <div class="s"><div class="n">${s.total}</div><div class="t">检查项</div></div>
+    </div>
+    <table><thead><tr><th></th><th>group</th><th>检查项</th><th>结果</th></tr></thead><tbody>${body}</tbody></table>
+    <div class="verdict"><b>结论</b><br>${esc(rep.verdict)}</div>`;
+}
+
+/* ============================ 交互 ============================ */
+async function boot(){
+  try{
+    STATUS = await call('/api/status');
+  }catch(e){
+    $('badges').innerHTML = '<span class="badge"><span class="dot bad"></span>后端未连接</span>';
+    $('bannerText').innerHTML = `无法连接后端 <code>${API || ''}/api/status</code>：${esc(e.message)}<br>
+      请在 <code>${esc('Downloads/multilingual')}</code> 下运行 <code>python laya_verify.py</code> 后刷新本页。`;
+    return;
+  }
+  const m = STATUS.model, t = STATUS.tokenizer;
+  PRESETS = STATUS.presets;
+  $('badges').innerHTML = `
+    <span class="badge"><span class="dot ok"></span>权重 <b>${esc(m.path)}</b></span>
+    <span class="badge">${(m.params/1e6).toFixed(1)}M params</span>
+    <span class="badge">${m.layers} 层 · ${m.head_layers} 层决策头</span>
+    <span class="badge">tokenizer <b>${esc(t.mode)}</b></span>
+    <span class="badge"><span class="dot ${t.faithful?'ok':'warn'}"></span>${t.faithful?'真实词表':'词表缺失 → 语义 BLOCKED'}</span>`;
+  $('banner').className = t.faithful ? 'banner hidden' : 'banner';
+  if (!t.faithful){
+    $('bannerText').innerHTML = `<b>语义精度不可判定 —— 这是本次验证的核心限制，不是 bug。</b><br>
+      本机 HuggingFace 不可达且无 256k 词表的 <code>tokenizer.json</code>，当前用字节级兜底词表：
+      <b>权重是真的、前向是真的、概率是真的</b>，但 token→语义 的映射是错的，
+      所以模型看到的是噪声，输出的近似均匀分布（choice≈0.25、noul≈0.50）正是预期结果。
+      结构、数值、不变量类检查（24 项）全部有效。<br>
+      修复：把官方 <code>tokenizer.json</code> 放到权重同目录（或设 <code>LAYA_TOKENIZER</code>），重启后自动切换为真实语义模式。`;
+  }
+  $('presetSel').innerHTML = PRESETS.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join('');
+  $('cfgMaxLen').value = STATUS.config.max_len;
+  $('cfgAttention').value = STATUS.config.attention;
+  $('cfgGate').value = STATUS.config.mlp_gate;
+  $('cfgHeadAct').value = STATUS.config.head_act;
+  $('cfgTypeStage').value = STATUS.config.type_emb_stage;
+  $('cfgTemp').value = STATUS.config.temperature_mode;
+  ['t0','t1','t2'].forEach((id,i)=>$(id).value = STATUS.config.temperature_manual[i]);
+  renderAssumptions(STATUS.assumptions);
+  renderLedger(STATUS);
+  loadPreset(0);
+  // ?autorun=1 载入后自动跑一次（演示 / 自动化验证用）
+  if (new URLSearchParams(location.search).get('autorun')) setTimeout(runPredict, 250);
+}
+
+function loadPreset(i){
+  const p = PRESETS[i]; if (!p) return;
+  $('stateBox').value = typeof p.state === 'string' ? p.state : JSON.stringify(p.state, null, 2);
+  QUESTIONS = p.questions.map(q => ({ id:q.id, type:q.type, instructions:q.instructions,
+                                      criteriaText: criteriaToText(q.type, q.criteria) }));
+  renderQuestions();
+}
+
+function collectConfig(){
+  return { max_len: +$('cfgMaxLen').value, attention: $('cfgAttention').value,
+           mlp_gate: $('cfgGate').value, head_act: $('cfgHeadAct').value,
+           type_emb_stage: $('cfgTypeStage').value, temperature_mode: $('cfgTemp').value,
+           temperature_manual: [+$('t0').value||1, +$('t1').value||1, +$('t2').value||1] };
+}
+function parseState(txt){
+  const s = txt.trim();
+  if (s.startsWith('{') || s.startsWith('[')) { try { return JSON.parse(s); } catch(e){} }
+  return s;
+}
+
+async function runPredict(){
+  const btn = $('runBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>推理中…';
+  try{
+    const j = await call('/api/predict', {
+      state: parseState($('stateBox').value),
+      questions: QUESTIONS.map(qToPayload),
+      config: collectConfig()
+    });
+    renderResults(j.result);
+    renderPrompt(j.result);
+  }catch(e){
+    $('results').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }finally{
+    btn.disabled = false; btn.textContent = '运行单次前向（Ctrl+Enter）';
+  }
+}
+
+async function runVerify(){
+  const btn = $('verifyBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin" style="border-color:rgba(0,0,0,.15);border-top-color:#2f6fed"></span>验证中…（跑完整检查集约 25 秒）';
+  try{
+    const j = await call('/api/verify', {});
+    renderReport(j.report);
+  }catch(e){ $('verifyOut').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+  finally{ btn.disabled = false; btn.textContent = '重新运行验证（27 项）'; }
+}
+
+async function runBench(){
+  const btn = $('benchBtn'); btn.disabled = true; btn.innerHTML = '<span class="spin" style="border-color:rgba(0,0,0,.15);border-top-color:#2f6fed"></span>基准中…';
+  try{ const j = await call('/api/benchmark', {}); renderBench(j.benchmark); }
+  catch(e){ $('benchOut').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+  finally{ btn.disabled = false; btn.textContent = '重新运行延迟基准'; }
+}
+
+/* ============================ 绑定 ============================ */
+$('loadPreset').onclick = () => loadPreset(+$('presetSel').value);
+$('runBtn').onclick = runPredict;
+$('verifyBtn').onclick = runVerify;
+$('benchBtn').onclick = runBench;
+$('addQ').onclick = () => {
+  QUESTIONS.push({ id:'q'+ (QUESTIONS.length+1), type:'choice', instructions:'',
+                   criteriaText:'option_a = 描述\noption_b = 描述' });
+  renderQuestions();
+};
+$('resetQ').onclick = () => loadPreset(+$('presetSel').value);
+$('cfgTemp').onchange = e => { $('tempManualWrap').style.display = e.target.value==='manual'?'block':'none'; };
+document.querySelectorAll('.tab').forEach(tb => tb.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.pane').forEach(x=>x.classList.remove('on'));
+  tb.classList.add('on'); $(tb.dataset.pane).classList.add('on');
+});
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey||e.metaKey) && e.key === 'Enter'){ e.preventDefault(); runPredict(); }
+});
+boot();
+</script>
+</body>
+</html>
