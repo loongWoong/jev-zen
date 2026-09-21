@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>股票买卖模拟 · Laya 决策模型自动操作</title>
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --panel2:#fafbfc; --line:#e4e7ec; --line2:#eef1f4;
+  --text:#1d2430; --muted:#667085; --dim:#98a2b3;
+  --accent:#2f6fed; --accent-weak:#eaf1fe;
+  --ok:#0d9488; --ok-weak:#e6f6f3;
+  --warn:#c2740a; --warn-weak:#fdf3e3;
+  --bad:#d64545; --bad-weak:#fdecec;
+  --info:#5b6b7c; --info-weak:#eef1f4;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --radius:10px; --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1460px;margin:0 auto;padding:20px 22px 56px}
+
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:14px}
+h1{font-size:19px;font-weight:650;margin:0;letter-spacing:.2px}
+h1 span{color:var(--muted);font-weight:400;font-size:13px;margin-left:8px}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
+  background:var(--panel);border:1px solid var(--line);font-size:12px;color:var(--muted);
+  font-family:var(--mono);white-space:nowrap}
+.badge b{color:var(--text);font-weight:600}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--dim);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+
+.banner{border:1px solid #f0d9ad;background:var(--warn-weak);border-radius:var(--radius);
+  padding:11px 14px;margin-bottom:14px;font-size:13px;color:#7a4a05;display:flex;gap:10px}
+.banner .ic{font-size:15px;line-height:1.4;flex:none}
+.banner b{color:#6b3f03}
+.banner code{font-family:var(--mono);background:#fff8ec;border:1px solid #f0d9ad;border-radius:4px;padding:1px 5px;font-size:12px}
+.banner.ok{border-color:#bfe3dd;background:var(--ok-weak);color:#0b5c53}
+.banner.ok b{color:#07443d}
+.banner.bad{border-color:#f5cdcd;background:var(--bad-weak);color:#9b2c2c}
+.banner.bad b{color:#8a1f1f}
+.banner.hidden{display:none}
+
+.grid{display:grid;grid-template-columns:minmax(380px,520px) minmax(460px,1fr);gap:16px;align-items:start}
+@media(max-width:1080px){.grid{grid-template-columns:1fr}}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card>.hd{display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--line2);
+  font-size:13px;font-weight:600}
+.card>.hd .sub{font-weight:400;color:var(--muted);font-size:12px;font-family:var(--mono)}
+.card>.hd .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+.card>.bd{padding:12px 13px}
+
+label.lb{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+input[type=text],input[type=number],select{width:100%;background:var(--panel2);color:var(--text);
+  border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px;font-family:inherit;outline:none}
+input:focus,select:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px var(--accent-weak)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+input[type=checkbox]{accent-color:var(--accent)}
+button{font-family:inherit;font-size:13px;border-radius:7px;border:1px solid var(--line);
+  background:var(--panel);color:var(--text);padding:7px 12px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--dim);background:var(--panel2)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{background:#2560d8;border-color:#2560d8}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.mini{padding:3px 8px;font-size:12px}
+button.ghost{background:transparent;border-color:transparent;color:var(--muted);padding:3px 7px;font-size:12px}
+button.ghost:hover{background:var(--info-weak);color:var(--text)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>*{min-width:0}
+.grow{flex:1}
+.hint{font-size:12px;color:var(--dim);margin-top:6px;line-height:1.5}
+.hint code{font-family:var(--mono);background:var(--info-weak);border-radius:4px;padding:1px 4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.full{grid-column:1/-1}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.st{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+.st .n{font-family:var(--mono);font-size:17px;font-weight:680;line-height:1.25}
+.st .t{font-size:11px;color:var(--muted)}
+.st .sm{font-size:10.5px;color:var(--dim);font-family:var(--mono)}
+.st.ok .n{color:var(--ok)} .st.bad .n{color:var(--bad)} .st.warn .n{color:var(--warn)}
+
+#stage{min-height:120px}
+.tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11.5px;
+  font-family:var(--mono);background:var(--info-weak);color:var(--info);border:1px solid var(--line)}
+.tag.ok{background:var(--ok-weak);color:#0b6a60;border-color:#c9e7e1}
+.tag.warn{background:var(--warn-weak);color:#8a5306;border-color:#f0dcb8}
+.tag.bad{background:var(--bad-weak);color:#9b2c2c;border-color:#f3cfcf}
+
+.pbar{display:flex;align-items:center;gap:7px;margin:2px 0}
+.pbar .k{font-family:var(--mono);font-size:11.5px;width:76px;flex:none;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.pbar .t{flex:1;height:11px;background:var(--info-weak);border-radius:4px;overflow:hidden}
+.pbar .t i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.pbar .v{font-family:var(--mono);font-size:11.5px;width:52px;text-align:right;color:var(--text)}
+.pbar.pick .t i{background:var(--ok)}
+.pbar.pick .k{color:var(--text);font-weight:600}
+.pbar.bad .t i{background:var(--bad)}
+
+.rank{display:flex;align-items:center;gap:7px;padding:2px 0;font-family:var(--mono);font-size:12px}
+.rank .k{width:74px;flex:none;color:var(--muted)}
+.rank .v{flex:1}
+.rank .s{width:96px;text-align:right;color:var(--text)}
+.rank.pick{font-weight:650}
+.rank.pick .k{color:var(--text)}
+.rank.risky .s{color:var(--bad)}
+
+pre{margin:6px 0 0;background:var(--panel2);border:1px solid var(--line2);border-radius:7px;
+  padding:9px 11px;font-family:var(--mono);font-size:11.5px;line-height:1.55;
+  white-space:pre-wrap;word-break:break-all;max-height:320px;overflow:auto;color:#3a4453}
+details>summary{cursor:pointer;font-size:12.5px;color:var(--muted);margin-top:8px}
+details>summary:hover{color:var(--text)}
+
+.hist{max-height:430px;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.hitem{border:1px solid var(--line2);border-radius:8px;padding:8px 10px;background:var(--panel2)}
+.hitem.fresh{border-color:var(--accent);background:var(--accent-weak)}
+.hrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}
+.hrow .idx{font-family:var(--mono);color:var(--dim);font-size:11px}
+.hrow .act{font-family:var(--mono);font-weight:650}
+.hrow .sep{color:var(--line)}
+.mono{font-family:var(--mono)}
+.muted{color:var(--muted)}
+.dim{color:var(--dim)}
+.err{display:none;border:1px solid #f3cfcf;background:var(--bad-weak);color:#9b2c2c;
+  border-radius:var(--radius);padding:9px 12px;font-size:12.5px;margin-bottom:12px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>股票买卖模拟<span>GBM + 分段趋势 · 双均线交叉 + 移动止损</span></h1>
+    <div class="badges">
+      <span class="badge"><i class="dot" id="apiDot"></i>API <b id="apiTag">探测中</b></span>
+      <span class="badge">策略 <b id="stratTag">rule</b></span>
+      <span class="badge">步 <b id="stepTag">0</b></span>
+      <span class="badge">模型延迟 <b id="latTag">—</b></span>
+      <span class="badge">目标 <b id="goalTag">—</b></span>
+    </div>
+  </header>
+
+  <div class="banner hidden" id="banner"></div>
+  <div class="err" id="errBox"></div>
+
+  <div class="grid">
+    <div class="col">
+      <div class="card">
+        <div class="hd">控制<span class="sub" id="sceneTag">stock</span>
+          <span class="right"><span class="tag" id="runTag">idle</span></span>
+        </div>
+        <div class="bd">
+          <div class="row" style="margin-bottom:10px">
+            <button class="primary" id="runBtn">自动运行</button>
+            <button id="stepBtn">单步</button>
+            <button id="resetBtn">重置</button>
+          </div>
+          <div class="grid2">
+            <div>
+              <label class="lb">决策策略</label>
+              <select id="strategy">
+                <option value="rule" selected>rule · 算法主判</option>
+                <option value="mix">mix · 算法筛候选 + 模型破平</option>
+                <option value="model">model · Laya 直接判决</option>
+              </select>
+            </div>
+            <div>
+              <label class="lb">每步间隔 (ms)</label>
+              <input type="number" id="delay" value="120" min="0" step="20" />
+            </div>
+          </div>
+          <div class="grid2" style="margin-top:9px">
+            <div>
+              <label class="lb">choice 温度</label>
+              <input type="number" id="temp" value="3" min="0.2" step="0.5" />
+            </div>
+            <div>
+              <label class="lb">随机种子</label>
+              <input type="number" id="seed" value="1" min="1" step="1" />
+            </div>
+          </div>
+          <div id="sceneCtl" class="grid2" style="margin-top:9px"></div>
+          <label class="row" style="margin-top:9px;font-size:12.5px;color:var(--muted)">
+            <input type="checkbox" id="callModel" /> rule 模式下也调用模型（仅留痕对照）
+          </label>
+          <div class="hint">快均线（5 日）上穿慢均线（20 日）= 金叉买入，下穿 = 死叉卖出；叠加 7% 移动止损控制回撤。单边手续费 0.2%。对照基准是买入并持有。</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd">场景<span class="sub">目标：跑赢买入持有且回撤 ≤ 25%</span></div>
+        <div class="bd"><div id="stage"></div></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card">
+        <div class="hd">对局指标</div>
+        <div class="bd"><div class="stats" id="metrics"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="hd">决策通道<span class="sub">Laya vs 算法基准</span></div>
+        <div class="bd"><div class="stats" id="chan"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="hd">批量验证<span class="sub">rule / mix / model 各跑 N 局</span>
+          <span class="right">
+            <input type="number" id="batchN" value="8" min="1" step="4"
+                   style="width:66px;padding:3px 6px;font-size:12px" />
+            <button class="mini" id="batchBtn">跑批量</button>
+          </span>
+        </div>
+        <div class="bd" id="batchOut"><div class="dim">点「跑批量」在三种策略下各跑 N 局，对比目标达成率</div></div>
+      </div>
+
+      <div class="card">
+        <div class="hd">最近一步<span class="sub">算法分解 / 模型概率 / 一致与否</span></div>
+        <div class="bd" id="trace"><div class="dim">尚无决策</div></div>
+      </div>
+
+      <div class="card">
+        <div class="hd">最近一次请求 / 响应<span class="sub">POST /api/predict</span></div>
+        <div class="bd" id="last"><div class="dim">尚无请求</div></div>
+      </div>
+
+      <div class="card">
+        <div class="hd">决策历史<span class="right"><button class="ghost" id="copyBtn">导出 JSONL</button>
+          <button class="ghost" id="clearBtn">清空</button></span></div>
+        <div class="bd"><div class="hist" id="hist"><div class="dim">尚无记录</div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =============================================================================
+ * Laya 决策模型 · 实验底座 (labs/core.js)
+ * 提供：API 客户端 / 决策合成 / 留痕 / 统计 / 单局动画 / 批量验证
+ * 场景模块需实现 SCENE 接口（见文件末尾约定）
+ * ===========================================================================*/
+'use strict';
+
+/* ------------------------------ 工具 ------------------------------ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const pct = v => (v * 100).toFixed(1) + '%';
+const nf = (v, d) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(d === undefined ? 2 : d) : '—';
+const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+/* -------------------------- Laya API 客户端 -------------------------- */
+const Laya = {
+  base: null,
+  ok: false,
+  async probe() {
+    const cands = location.protocol === 'file:'
+      ? ['http://127.0.0.1:8771']
+      : ['', 'http://127.0.0.1:8771'];
+    for (const c of cands) {
+      try {
+        const r = await fetch(c + '/api/health', { method: 'GET', cache: 'no-store' });
+        if (!r.ok) continue;
+        const j = await r.json();
+        if (j && j.ok) { this.base = c; this.ok = true; return c; }
+      } catch (e) { /* 换下一个候选 */ }
+    }
+    this.base = null; this.ok = false; return null;
+  },
+  async post(path, body) {
+    const opt = { method: body === undefined ? 'GET' : 'POST',
+                  headers: { 'Content-Type': 'application/json' } };
+    if (body !== undefined) opt.body = JSON.stringify(body);
+    const r = await fetch(this.base + path, opt);
+    const t = await r.text();
+    let j;
+    try { j = JSON.parse(t); } catch (e) { throw new Error('非 JSON 响应: ' + t.slice(0, 200)); }
+    if (!j.ok) throw new Error(j.error || 'unknown error');
+    return j;
+  },
+  /* state: string | object ; questions: [{id,type,instructions,criteria}] */
+  async predict(state, questions, temp) {
+    const j = await this.post('/api/predict', {
+      state: state,
+      questions: questions,
+      config: { temperature_mode: 'manual',
+                temperature_manual: [temp || 3, 1, 1] }
+    });
+    return j.result;
+  }
+};
+
+/* ------------------------------ Lab 框架 ------------------------------ */
+const Lab = {
+  s: null,
+  sopt: {},
+  strategy: 'rule',
+  temp: 3,
+  delayMs: 120,
+  seed: 1,
+  running: false,
+  busy: false,
+  gen: 0,
+  hist: [],
+  last: null,
+  lastRaw: null,
+  freshIdx: -1,
+  batch: null,
+  ST: null,
+
+  freshStat() {
+    return { steps: 0, calls: 0, latSum: 0, latMax: 0, spreadSum: 0, spreadN: 0,
+             confSum: 0, agree: 0, agreeTot: 0, illegal: 0, errs: 0,
+             goalHit: false, episodes: 0, wins: 0, scoreSum: 0, stepSum: 0 };
+  },
+
+  /* ---------- 场景自定义控件 ---------- */
+  buildControls() {
+    const host = $('sceneCtl');
+    host.innerHTML = '';
+    this.sopt = {};
+    const cts = SCENE.controls || [];
+    for (const c of cts) {
+      const d = document.createElement('div');
+      if (c.type === 'select') {
+        d.innerHTML = `<label class="lb">${esc(c.label)}</label>
+          <select id="sc_${c.id}">${(c.options || []).map(o =>
+            `<option value="${esc(o.v)}"${o.v === c.value ? ' selected' : ''}>${esc(o.t)}</option>`).join('')}</select>`;
+      } else if (c.type === 'checkbox') {
+        d.innerHTML = `<label class="lb">${esc(c.label)}</label>
+          <label class="row" style="font-size:12.5px;color:var(--muted);margin:5px 0 0">
+            <input type="checkbox" id="sc_${c.id}" ${c.value ? 'checked' : ''} /> ${esc(c.hint || '启用')}</label>`;
+      } else if (c.type === 'range') {
+        d.innerHTML = `<label class="lb">${esc(c.label)} <span class="mono" id="scv_${c.id}">${c.value}</span></label>
+          <input type="range" id="sc_${c.id}" min="${c.min ?? 0}" max="${c.max ?? 100}"
+                 step="${c.step ?? 1}" value="${c.value}" />`;
+      } else {
+        d.innerHTML = `<label class="lb">${esc(c.label)}</label>
+          <input type="number" id="sc_${c.id}" value="${c.value}" min="${c.min ?? 0}" step="${c.step ?? 1}" />`;
+      }
+      host.appendChild(d);
+      this.sopt[c.id] = c.value;
+    }
+    host.querySelectorAll('[id^="sc_"]').forEach(el => {
+      const id = el.id.slice(3);
+      const on = () => {
+        this.sopt[id] = el.type === 'checkbox' ? el.checked
+                      : (el.type === 'number' || el.type === 'range') ? parseFloat(el.value)
+                      : el.value;
+        const lb = $('scv_' + id); if (lb) lb.textContent = this.sopt[id];
+        if (SCENE.onOptChange) SCENE.onOptChange(id, this.sopt[id], this);
+      };
+      el.addEventListener('change', on);
+      el.addEventListener('input', on);
+    });
+  },
+
+  /* ---------- 决策合成 ---------- */
+  async decide(s, legal, strategy, temp, useModel) {
+    const stateText = SCENE.text(s, legal, this.sopt);
+    const qs = SCENE.questions ? (SCENE.questions(s, legal, this.sopt) || []) : [];
+    const t0 = nowMs();
+    const rd = SCENE.rule(s, legal, this.sopt);
+    const ruleMs = nowMs() - t0;
+
+    let m = null, raw = null, modelChoice = null, probs = null, conf = null, spread = null;
+    const want = !!Laya.ok && qs.length > 0 &&
+                 (strategy === 'model' || strategy === 'mix' || useModel);
+    if (want) {
+      try {
+        raw = await Laya.predict(stateText, qs, temp);
+        m = raw.answers || {};
+        const key = qs[0].id;
+        const a = m[key];
+        if (a && a.type === 'choice') {
+          modelChoice = a.choice; probs = a.probs || {};
+          conf = a.confidence; spread = a.logit_spread;
+        }
+      } catch (e) {
+        this.ST.errs++;
+        throw e;
+      }
+      this.ST.calls++;
+      if (raw && raw.meta) {
+        this.ST.latSum += raw.meta.latency_ms;
+        this.ST.latMax = Math.max(this.ST.latMax, raw.meta.latency_ms);
+      }
+      if (typeof spread === 'number') { this.ST.spreadSum += spread; this.ST.spreadN++; }
+      if (typeof conf === 'number') this.ST.confSum += conf;
+      if (modelChoice !== null) {
+        this.ST.agreeTot++;
+        if (modelChoice === rd.choice) this.ST.agree++;
+      }
+    }
+
+    let applied = rd.choice, source = 'rule', fallback = false, band = null;
+    if (strategy === 'model' && modelChoice !== null) {
+      source = 'model';
+      if (legal.indexOf(modelChoice) >= 0) applied = modelChoice;
+      else { fallback = true; applied = rd.choice; this.ST.illegal++; }
+    } else if (strategy === 'mix' && modelChoice !== null) {
+      source = 'mix';
+      // 算法给出候选窄带，模型只在带内破平 —— 模型选不到带外的危险动作
+      const bandV = (typeof this.sopt.mixBand === 'number') ? this.sopt.mixBand : 0.02;
+      band = bandV;
+      let cand = (rd.ranks || []).filter(r => legal.indexOf(r.key) >= 0);
+      if (cand.length) {
+        const vs = cand.map(r => r.score);
+        const hi = Math.max(...vs), lo = Math.min(...vs);
+        const near = cand.filter(r => hi - r.score <= bandV * Math.max(1e-9, hi - lo));
+        cand = near.length ? near : cand.slice(0, 1);
+      } else cand = [rd.choice];
+      let bp = -1;
+      applied = cand[0].key !== undefined ? cand[0].key : cand[0];
+      for (const r of cand) {
+        const k = r.key !== undefined ? r.key : r;
+        const p = probs[k] ?? 0;
+        if (p > bp) { bp = p; applied = k; }
+      }
+    }
+    if (legal.indexOf(applied) < 0) {
+      fallback = true; applied = rd.choice; if (strategy === 'model') this.ST.illegal++;
+    }
+    if (legal.indexOf(applied) < 0) applied = legal[0];
+
+    return { applied, source, fallback, band, rd, m, raw, probs, conf, spread,
+             modelChoice, stateText, qs, ruleMs, state: stateText };
+  },
+
+  /* ---------- 单步（动画模式） ---------- */
+  async tick() {
+    if (this.busy) return false;
+    const s = this.s;
+    if (!s || SCENE.done(s)) return false;
+    const legal = SCENE.legal(s);
+    if (!legal.length) { this.finish('无可行动作'); return false; }
+    this.busy = true;
+    $('stepBtn').disabled = true;
+    try {
+      const d = await this.decide(s, legal, this.strategy, this.temp, $('callModel').checked);
+      const before = SCENE.snapshot ? SCENE.snapshot(s) : null;
+      const res = SCENE.step(s, d.applied, this.sopt) || {};
+      this.ST.steps++;
+      const h = {
+        i: this.hist.length + 1,
+        applied: d.applied, source: d.source, fallback: d.fallback,
+        legal: legal.slice(),
+        rd: { choice: d.rd.choice, ranks: d.rd.ranks || [], note: d.rd.note || '' },
+        modelChoice: d.modelChoice, probs: d.probs, conf: d.conf, spread: d.spread,
+        ruleMs: d.ruleMs,
+        lat: d.raw && d.raw.meta ? d.raw.meta.latency_ms : null,
+        tokens: d.raw && d.raw.meta ? d.raw.meta.tokens : null,
+        info: res.info || '',
+        metrics: SCENE.metrics ? SCENE.metrics(s) : [],
+        ts: Date.now()
+      };
+      this.hist.push(h);
+      this.freshIdx = h.i;
+      this.last = d; this.lastRaw = d.raw;
+      if (SCENE.goalOk && SCENE.goalOk(s, this.sopt)) { this.ST.goalHit = true; }
+      this.renderAll();
+      $('errBox').style.display = 'none';
+      if (SCENE.done(s)) {
+        this.finish(SCENE.goalOk && SCENE.goalOk(s, this.sopt) ? '目标达成' : '本局结束');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      this.ST.errs++;
+      const box = $('errBox');
+      box.style.display = 'block';
+      box.textContent = '决策失败: ' + (e && e.message ? e.message : String(e));
+      this.stop();
+      return false;
+    } finally {
+      this.busy = false;
+      $('stepBtn').disabled = false;
+    }
+  },
+
+  async loop() {
+    const my = ++this.gen;
+    while (this.running && my === this.gen) {
+      const ok = await this.tick();
+      if (!ok) break;
+      const d = parseInt($('delay').value, 10);
+      if (d > 0) await sleep(d);
+      if (this.ST.goalHit && SCENE.stopOnGoal !== false) { this.finish('目标达成'); break; }
+    }
+  },
+  start() {
+    if (this.running) return;
+    if (!this.s || SCENE.done(this.s)) this.reset(false);
+    this.running = true;
+    $('runBtn').textContent = '暂停';
+    $('runTag').textContent = 'running'; $('runTag').className = 'tag ok';
+    this.loop();
+  },
+  stop() {
+    this.running = false;
+    $('runBtn').textContent = '自动运行';
+    $('runTag').textContent = 'idle'; $('runTag').className = 'tag';
+  },
+  finish(reason) {
+    this.stop();
+    $('runTag').textContent = reason || 'done';
+    $('runTag').className = 'tag ' + (this.ST.goalHit ? 'ok' : 'warn');
+  },
+  reset(rerender) {
+    this.stop();
+    this.ST = this.freshStat();
+    this.hist = []; this.freshIdx = -1; this.last = null; this.lastRaw = null;
+    this.strategy = $('strategy').value || 'rule';
+    this.temp = parseFloat($('temp').value) || 3;
+    this.seed = parseInt($('seed').value, 10) || 1;
+    this.s = SCENE.init(this.seed, this.sopt);
+    $('stratTag').textContent = this.strategy;
+    if (rerender !== false) this.renderAll();
+  },
+
+  /* ---------- 批量验证（无渲染，纯逻辑跑多局） ---------- */
+  async playEpisode(seed, strategy, temp, maxSteps) {
+    const s = SCENE.init(seed, this.sopt);
+    const acc = { steps: 0, calls: 0, lat: 0, agree: 0, agreeTot: 0, illegal: 0,
+                  goal: false, score: 0, errs: 0 };
+    let guard = maxSteps || (SCENE.maxSteps ? SCENE.maxSteps(this.sopt) : 500);
+    while (!SCENE.done(s) && guard-- > 0) {
+      const legal = SCENE.legal(s);
+      if (!legal.length) break;
+      let applied;
+      const rd = SCENE.rule(s, legal, this.sopt);
+      if (strategy === 'rule' || !Laya.ok) {
+        applied = rd.choice;
+      } else {
+        let d;
+        try { d = await this.decide(s, legal, strategy, temp, false); }
+        catch (e) { acc.errs++; applied = rd.choice; d = null; }
+        if (d) {
+          applied = d.applied;
+          if (strategy === 'model' && d.fallback) acc.illegal++;
+          if (d.modelChoice !== null) {
+            acc.agreeTot++; if (d.modelChoice === rd.choice) acc.agree++;
+          }
+          if (d.raw && d.raw.meta) { acc.calls++; acc.lat += d.raw.meta.latency_ms; }
+        }
+      }
+      if (legal.indexOf(applied) < 0) applied = legal[0];
+      SCENE.step(s, applied, this.sopt);
+      acc.steps++;
+      if (SCENE.goalOk && SCENE.goalOk(s, this.sopt)) { acc.goal = true; break; }
+    }
+    if (!acc.goal && SCENE.goalOk && SCENE.goalOk(s, this.sopt)) acc.goal = true;
+    const m = SCENE.metrics ? SCENE.metrics(s) : [];
+    const sc = m.find(x => /分|score/i.test(x.k));
+    acc.score = sc ? (typeof sc.v === 'number' ? sc.v : 0) : 0;
+    return acc;
+  },
+
+  async runBatch() {
+    const n = parseInt($('batchN').value, 10) || 20;
+    const btn = $('batchBtn');
+    btn.disabled = true;
+    const rows = [];
+    const strategies = ['rule', 'mix', 'model'];
+    for (const st of strategies) {
+      if (st !== 'rule' && !Laya.ok) { rows.push(null); continue; }
+      const acc = { st, n: 0, wins: 0, steps: 0, score: 0, calls: 0, lat: 0,
+                    agree: 0, agreeTot: 0, illegal: 0, errs: 0 };
+      for (let i = 0; i < n; i++) {
+        const r = await this.playEpisode(this.seed + i, st, this.temp, null);
+        acc.n++;
+        if (r.goal) acc.wins++;
+        acc.steps += r.steps; acc.score += r.score;
+        acc.calls += r.calls; acc.lat += r.lat;
+        acc.agree += r.agree; acc.agreeTot += r.agreeTot;
+        acc.illegal += r.illegal; acc.errs += r.errs;
+        if (i % 5 === 0) {
+          $('batchOut').innerHTML = this.batchHtml(rows.concat([acc]), st, i + 1, n);
+          await sleep(0);
+        }
+      }
+      rows.push(acc);
+      $('batchOut').innerHTML = this.batchHtml(rows, st, n, n);
+    }
+    this.batch = rows;
+    $('batchOut').innerHTML = this.batchHtml(rows, 'done', n, n);
+    btn.disabled = false;
+  },
+
+  batchHtml(rows, cur, i, n) {
+    const th = `<div class="row" style="font-size:12px;color:var(--muted);margin-bottom:6px">
+      批量验证 · <span class="mono">${esc(cur === 'done' ? '完成' : cur + ' ' + i + '/' + n)}</span></div>`;
+    if (!rows.filter(Boolean).length) return th + '<div class="dim">尚无结果</div>';
+    const tb = `<table style="width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px">
+      <thead><tr style="color:var(--muted);font-size:11px;text-align:right">
+        <th style="text-align:left">策略</th><th>局数</th><th>达成</th><th>达成率</th>
+        <th>均步</th><th>均分</th><th>模型调用</th><th>均延迟ms</th><th>与规则一致</th><th>非法回退</th>
+      </tr></thead><tbody>`;
+    const body = rows.filter(Boolean).map(a => {
+      const rate = a.n ? a.wins / a.n : 0;
+      const cls = rate >= 0.9 ? 'ok' : rate >= 0.5 ? 'warn' : 'bad';
+      return `<tr style="text-align:right;border-top:1px solid var(--line2)">
+        <td style="text-align:left">${esc(a.st)}</td>
+        <td>${a.n}</td><td>${a.wins}</td>
+        <td style="color:${cls === 'ok' ? 'var(--ok)' : cls === 'warn' ? 'var(--warn)' : 'var(--bad)'};font-weight:650">${pct(rate)}</td>
+        <td>${nf(a.n ? a.steps / a.n : 0, 1)}</td>
+        <td>${nf(a.n ? a.score / a.n : 0, 0)}</td>
+        <td>${a.calls}</td>
+        <td>${nf(a.calls ? a.lat / a.calls : 0, 1)}</td>
+        <td>${a.agreeTot ? pct(a.agree / a.agreeTot) : '—'}</td>
+        <td>${a.illegal}</td></tr>`;
+    }).join('');
+    return th + tb + body + '</tbody></table>';
+  },
+
+  /* ---------- 渲染 ---------- */
+  renderAll() {
+    this.renderStage();
+    this.renderMetrics();
+    this.renderChan();
+    this.renderTrace();
+    this.renderLast();
+    this.renderHist();
+    $('stepTag').textContent = this.ST.steps;
+    $('goalTag').textContent = this.ST.goalHit ? '已达成' : '未达成';
+    $('goalTag').style.color = this.ST.goalHit ? 'var(--ok)' : '';
+    $('latTag').textContent = this.ST.calls ? nf(this.ST.latSum / this.ST.calls, 1) + 'ms' : '—';
+  },
+  renderStage() {
+    if (SCENE.render) SCENE.render(this.s, $('stage'), this.sopt);
+  },
+  statHtml(list) {
+    return (list || []).map(m => `<div class="st${m.tone ? ' ' + m.tone : ''}">
+      <div class="n">${esc(m.v)}</div><div class="t">${esc(m.k)}</div>
+      ${m.sm ? `<div class="sm">${esc(m.sm)}</div>` : ''}</div>`).join('');
+  },
+  renderMetrics() {
+    const list = SCENE.metrics ? SCENE.metrics(this.s, this.sopt) : [];
+    $('metrics').innerHTML = this.statHtml(list);
+  },
+  renderChan() {
+    const S = this.ST;
+    const agree = S.agreeTot ? S.agree / S.agreeTot : null;
+    $('chan').innerHTML = this.statHtml([
+      { k: '模型调用', v: S.calls, sm: S.calls ? '均 ' + nf(S.latSum / S.calls, 1) + 'ms' : '—' },
+      { k: '算法·模型一致', v: agree === null ? '—' : pct(agree),
+        tone: agree === null ? '' : agree >= 0.6 ? 'ok' : agree >= 0.35 ? 'warn' : 'bad',
+        sm: S.agreeTot ? S.agree + '/' + S.agreeTot : '—' },
+      { k: '模型非法回退', v: S.illegal, tone: S.illegal ? 'bad' : 'ok' },
+      { k: 'logit 极差', v: S.spreadN ? nf(S.spreadSum / S.spreadN, 4) : '—',
+        tone: (S.spreadN && S.spreadSum / S.spreadN < 0.01) ? 'warn' : '',
+        sm: '通道增益读数' },
+      { k: '平均置信度', v: S.calls ? nf(S.confSum / S.calls, 3) : '—' },
+      { k: '错误', v: S.errs, tone: S.errs ? 'bad' : 'ok' }
+    ]);
+  },
+  renderTrace() {
+    const h = this.hist[this.hist.length - 1];
+    if (!h) { $('trace').innerHTML = '<div class="dim">尚无决策</div>'; return; }
+    const maxP = Math.max(1e-9, ...Object.values(h.probs || {}).map(v => Math.abs(v)));
+    const bars = Object.keys(h.probs || {}).map(k => {
+      const p = h.probs[k] ?? 0;
+      const isPick = k === h.modelChoice;
+      const isApplied = k === h.applied;
+      const cls = isApplied ? 'pick' : (isPick ? '' : '');
+      return `<div class="pbar ${cls}"><span class="k">${esc(k)}</span>
+        <span class="t"><i style="width:${(Math.abs(p) / maxP * 100).toFixed(1)}%"></i></span>
+        <span class="v">${nf(p, 3)}${isApplied ? ' ▸' : ''}</span></div>`;
+    }).join('');
+    const ranks = (h.rd.ranks || []).map(r => {
+      const pick = r.key === h.rd.choice;
+      return `<div class="rank ${pick ? 'pick' : ''} ${r.risky ? 'risky' : ''}">
+        <span class="k">${esc(r.label || r.key)}</span>
+        <span class="v">${esc(r.detail || '')}</span>
+        <span class="s">${typeof r.score === 'number' ? nf(r.score, r.digits === undefined ? 1 : r.digits) : esc(r.score)}</span></div>`;
+    }).join('');
+    const agree = (h.modelChoice === null || h.modelChoice === undefined) ? null
+                : (h.modelChoice === h.rd.choice);
+    const badge = agree === null ? '<span class="tag">未调用模型</span>'
+      : agree ? '<span class="tag ok">模型与算法一致</span>'
+              : `<span class="tag warn">分歧 模型=${esc(h.modelChoice)} / 算法=${esc(h.rd.choice)}</span>`;
+    $('trace').innerHTML =
+      `<div class="row" style="margin-bottom:7px">
+         <span class="mono">#${h.i}</span>
+         <span class="tag">执行 ${esc(h.applied)}</span>
+         <span class="tag">来源 ${esc(h.source)}</span>
+         ${h.fallback ? '<span class="tag bad">回退</span>' : ''}
+         ${badge}
+         <span class="dim mono" style="margin-left:auto">算法 ${nf(h.ruleMs, 2)}ms${h.lat !== null ? ' · 模型 ' + nf(h.lat, 1) + 'ms' : ''}</span>
+       </div>
+       ${ranks ? `<div style="font-size:11.5px;color:var(--muted);margin:6px 0 2px">算法分解（高亮 = 算法首选）</div>${ranks}` : ''}
+       ${bars ? `<div style="font-size:11.5px;color:var(--muted);margin:9px 0 2px">Laya choice 概率（▸ = 实际执行）</div>${bars}` : ''}
+       ${h.rd.note ? `<div class="hint">${esc(h.rd.note)}</div>` : ''}
+       ${h.info ? `<div class="hint">本步：${esc(h.info)}</div>` : ''}`;
+  },
+  renderLast() {
+    const d = this.last;
+    if (!d) { $('last').innerHTML = '<div class="dim">尚无请求</div>'; return; }
+    $('last').innerHTML =
+      `<details open><summary>喂给模型的 state（${(d.stateText || '').length} 字符）</summary>
+        <pre>${esc(d.stateText)}</pre></details>
+       <details><summary>questions（${d.qs.length}）</summary>
+        <pre>${esc(JSON.stringify(d.qs, null, 2))}</pre></details>
+       ${d.raw ? `<details><summary>完整响应 JSON</summary><pre>${esc(JSON.stringify(d.raw, null, 2))}</pre></details>` : ''}`;
+  },
+  renderHist() {
+    if (!this.hist.length) { $('hist').innerHTML = '<div class="dim">尚无记录</div>'; return; }
+    const items = this.hist.slice(-120).reverse().map(h => {
+      const agree = (h.modelChoice === null || h.modelChoice === undefined) ? null
+                  : (h.modelChoice === h.rd.choice);
+      const b = agree === null ? '' : agree
+        ? '<span class="tag ok">一致</span>' : '<span class="tag warn">分歧</span>';
+      return `<div class="hitem${h.i === this.freshIdx ? ' fresh' : ''}">
+        <div class="hrow">
+          <span class="idx">#${h.i}</span>
+          <span class="act">${esc(h.applied)}</span>
+          <span class="dim mono">${esc(h.source)}</span>
+          ${b}
+          ${h.probs && h.probs[h.applied] !== undefined ? `<span class="dim mono">p=${nf(h.probs[h.applied], 3)}</span>` : ''}
+          <span class="dim mono" style="margin-left:auto">${h.lat !== null ? nf(h.lat, 0) + 'ms' : ''}</span>
+        </div>
+        <div class="hrow dim mono" style="font-size:11.5px">${esc(h.info || '')}</div>
+      </div>`;
+    }).join('');
+    $('hist').innerHTML = items;
+  },
+
+  /* ---------- 启动 ---------- */
+  async boot() {
+    this.ST = this.freshStat();
+    $('sceneTag').textContent = SCENE.id;
+    this.buildControls();
+    this.s = SCENE.init(this.seed, this.sopt);
+
+    $('runBtn').onclick = () => { this.running ? this.stop() : this.start(); };
+    $('stepBtn').onclick = async () => {
+      if (!this.s || SCENE.done(this.s)) this.reset(false);
+      await this.tick();
+    };
+    $('resetBtn').onclick = () => this.reset(true);
+    $('strategy').onchange = () => {
+      this.strategy = $('strategy').value || 'rule';
+      $('stratTag').textContent = this.strategy;
+    };
+    $('temp').onchange = () => { this.temp = parseFloat($('temp').value) || 3; };
+    $('seed').onchange = () => { this.seed = parseInt($('seed').value, 10) || 1; };
+    $('copyBtn').onclick = () => {
+      const txt = this.hist.map(h => JSON.stringify(h)).join('\n');
+      navigator.clipboard ? navigator.clipboard.writeText(txt) : console.log(txt);
+      $('copyBtn').textContent = '已复制 ' + this.hist.length + ' 条';
+      setTimeout(() => { $('copyBtn').textContent = '导出 JSONL'; }, 1600);
+    };
+    $('clearBtn').onclick = () => { this.hist = []; this.renderHist(); };
+    if ($('batchBtn')) $('batchBtn').onclick = () => this.runBatch();
+
+    const c = await Laya.probe();
+    $('apiTag').textContent = c ? (c || location.origin) + '/api' : '未连接';
+    $('apiDot').className = 'dot ' + (c ? 'ok' : 'bad');
+    const b = $('banner');
+    if (!c) {
+      b.className = 'banner bad';
+      b.innerHTML = '<span class="ic">●</span><div>未连到 Laya 后端。请先启动 ' +
+        '<code>python laya_verify.py --serve</code>（8771 端口），否则只能跑纯算法模式。</div>';
+    } else {
+      b.className = 'banner';
+      b.innerHTML = '<span class="ic">●</span><div><b>通道提示</b>：模型权重里不含 prompt 模板 / type_emb 注入位置等' +
+        '重建项，决策头读出的是近似通道。默认 <code>rule</code> 策略由算法主判、模型仅留痕对照；' +
+        '切到 <code>model</code> 可观察模型独立表现。</div>';
+    }
+    this.renderAll();
+  }
+};
+
+/* =============================================================================
+ * SCENE 接口约定（每个场景模块必须实现）
+ *   id / name / sub / goal / hint
+ *   controls: [{ id, label, type:'select'|'number'|'checkbox'|'range', value, options, ... }]
+ *   init(seed, sopt)            -> state（纯数据，可 JSON 化）
+ *   legal(state)                -> [key, ...] 合法动作
+ *   step(state, key, sopt)      -> { info }  就地推进
+ *   text(state, legal, sopt)    -> 喂模型的 state 文本
+ *   questions(state, legal, sopt) -> [{ id, type:'choice'|'score'|'noul', instructions, criteria }]
+ *   rule(state, legal, sopt)    -> { choice, ranks:[{key,label,score,detail,risky}], note }
+ *   metrics(state, sopt)        -> [{ k, v, tone, sm }]
+ *   render(state, el, sopt)
+ *   done(state)                 -> bool
+ *   goalOk(state, sopt)         -> bool  （自动验证目标）
+ *   maxSteps(sopt)              -> number （批量验证的保护上限，可选）
+ * ===========================================================================*/
+
+</script>
+<script>
+/* =============================================================================
+ * 场景：股票买卖模拟 Stock Trading
+ * 价格序列 = 几何布朗运动 + 若干段趋势（牛/熊/震荡），同一 seed 完全可复现
+ * 动作：buy（全仓买入）/ sell（全部卖出）/ hold
+ * 算法：双均线交叉（快 MA5 / 慢 MA20）+ 7% 移动止损 + 2% 手续费单边
+ * 对照：买入并持有（buy & hold）
+ * 目标：收益跑赢买入持有，且最大回撤 ≤ 目标
+ * ===========================================================================*/
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+/* Box-Muller */
+function gauss(rng) {
+  let u = 0, v = 0;
+  while (u === 0) u = rng();
+  while (v === 0) v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+const FEE = 0.002;          // 单边手续费
+const STOP_LOSS = 0.07;     // 相对持仓峰值的移动止损
+
+function genPrices(seed, n) {
+  const rng = mulberry32((seed * 2654435761) >>> 0);
+  const prices = [100];
+  let drift = 0.0004;
+  let seg = 0;
+  for (let i = 1; i < n; i++) {
+    if (i % 45 === 0) {           // 每 45 天换一段趋势
+      seg = rng();
+      drift = seg < 0.34 ? 0.0035 : seg < 0.67 ? -0.0030 : 0.0002;
+    }
+    const shock = gauss(rng) * 0.012;
+    prices.push(Math.max(5, prices[i - 1] * Math.exp(drift + shock)));
+  }
+  return prices;
+}
+
+function ma(prices, i, n) {
+  if (i + 1 < n) return null;
+  let s = 0;
+  for (let k = 0; k < n; k++) s += prices[i - k];
+  return s / n;
+}
+
+const SCENE = {
+  id: 'stock',
+  name: '股票买卖模拟',
+  sub: 'GBM + 分段趋势 · 双均线交叉 + 移动止损',
+  goal: '目标：跑赢买入持有且回撤 ≤ 25%',
+  hint: '快均线（5 日）上穿慢均线（20 日）= 金叉买入，下穿 = 死叉卖出；'
+      + '叠加 7% 移动止损控制回撤。单边手续费 0.2%。对照基准是买入并持有。',
+
+  controls: [
+    { id: 'fast', label: '快均线', type: 'number', value: 5, min: 2, max: 30, step: 1 },
+    { id: 'slow', label: '慢均线', type: 'number', value: 20, min: 5, max: 60, step: 1 },
+    { id: 'stop', label: '移动止损 %', type: 'number', value: 7, min: 0, max: 30, step: 1 },
+    { id: 'buyhold', label: '对照：买入持有', type: 'checkbox', value: false, hint: '只买一次然后一直持有' }
+  ],
+
+  init(seed, sopt) {
+    const n = 260;
+    const prices = genPrices(seed, n);
+    const s = { prices, i: 0, n, cash: 100000, shares: 0,
+                trades: [], peak: 0, maxDD: 0, equity: [100000],
+                hold: false, stop: (parseInt(sopt.stop, 10) || 7) / 100,
+                fast: parseInt(sopt.fast, 10) || 5, slow: parseInt(sopt.slow, 10) || 20,
+                buyhold: !!sopt.buyhold, entry: 0 };
+    return s;
+  },
+
+  legal() { return ['buy', 'sell', 'hold']; },
+
+  /* 终局时 i 已经等于 n，直接取 prices[i] 会是 undefined → 净值变 NaN */
+  _equity(s) { return s.cash + s.shares * s.prices[Math.min(s.i, s.n - 1)]; },
+
+  step(s, key) {
+    const px = s.prices[s.i];
+    let info = '';
+    if (key === 'buy' && s.shares === 0 && s.cash > 0) {
+      const qty = s.cash * (1 - FEE) / px;
+      s.shares = qty; s.cash = 0; s.entry = px; s.peak = px;
+      s.trades.push({ i: s.i, act: 'buy', px });
+      info = `买入 @${px.toFixed(2)}`;
+    } else if (key === 'sell' && s.shares > 0) {
+      s.cash = s.shares * px * (1 - FEE); s.shares = 0;
+      s.trades.push({ i: s.i, act: 'sell', px });
+      info = `卖出 @${px.toFixed(2)}`;
+    } else info = key === 'hold' ? '持有不动' : '无操作';
+    s.i++;
+    if (s.i < s.n) {
+      const eq = this._equity(s);
+      s.equity.push(eq);
+      s.peak = Math.max(s.peak, eq);
+      s.maxDD = Math.max(s.maxDD, (s.peak - eq) / s.peak);
+    }
+    return { info: `${info} · 净值 ${this._equity(s).toFixed(0)}` };
+  },
+
+  _ret(s) { return this._equity(s) / 100000 - 1; },
+  _bh(s) { return s.prices[Math.min(s.i, s.n - 1)] / s.prices[0] - 1; },
+
+  text(s, legal) {
+    const i = s.i;
+    const win = s.prices.slice(Math.max(0, i - 24), i + 1).map(p => p.toFixed(1)).join(' ');
+    const f = ma(s.prices, i, s.fast), sl = ma(s.prices, i, s.slow);
+    return `Stock trading simulation. day ${i}/${s.n}. price=${s.prices[i].toFixed(2)}.\n`
+      + `cash=${s.cash.toFixed(0)} shares=${s.shares.toFixed(2)} equity=${this._equity(s).toFixed(0)} `
+      + `(start 100000).\n`
+      + `MA${s.fast}=${f === null ? 'n/a' : f.toFixed(2)} MA${s.slow}=${sl === null ? 'n/a' : sl.toFixed(2)} `
+      + `${f !== null && sl !== null ? (f > sl ? '(golden cross zone)' : '(dead cross zone)') : ''}.\n`
+      + `return=${(this._ret(s) * 100).toFixed(2)}% buy_hold=${(this._bh(s) * 100).toFixed(2)}% `
+      + `max_drawdown=${(s.maxDD * 100).toFixed(1)}% trades=${s.trades.length}.\n`
+      + `recent prices (last ${Math.min(25, i + 1)}): ${win}\n`
+      + `actions: buy (all in), sell (all out), hold. Fee ${(FEE * 100).toFixed(1)}% per side.`;
+  },
+
+  questions(s, legal) {
+    return [
+      { id: 'move', type: 'choice',
+        instructions: 'Should the strategy buy, sell, or hold today?',
+        criteria: { buy: 'invest all cash into the stock',
+                    sell: 'sell the entire position to cash',
+                    hold: 'do nothing today' } },
+      { id: 'trend', type: 'score',
+        instructions: 'What is the current trend?',
+        criteria: ['strong downtrend', 'mild downtrend', 'mild uptrend', 'strong uptrend'] }
+    ];
+  },
+
+  rule(s, legal, sopt) {
+    const i = s.i, px = s.prices[i];
+    const f = ma(s.prices, i, s.fast), sl = ma(s.prices, i, s.slow);
+    let choice = 'hold', note;
+    if (s.buyhold) {
+      choice = s.shares === 0 && s.cash > 0 ? 'buy' : 'hold';
+      note = '买入持有对照：第一天全仓买入，之后一直持有。';
+    } else if (s.shares > 0) {
+      const dd = (s.peak - this._equity(s)) / s.peak;
+      if (dd >= s.stop) { choice = 'sell'; note = `移动止损触发：净值距峰值回撤 ${(dd * 100).toFixed(1)}% ≥ ${(s.stop * 100).toFixed(0)}%。`; }
+      else if (f !== null && sl !== null && f < sl) { choice = 'sell'; note = `死叉：MA${s.fast}(${f.toFixed(2)}) 下穿 MA${s.slow}(${sl.toFixed(2)})。`; }
+      else { choice = 'hold'; note = `持仓中：快均线仍在慢均线之上，回撤 ${(dd * 100).toFixed(1)}% 未触发止损。`; }
+    } else {
+      if (f !== null && sl !== null && f > sl) { choice = 'buy'; note = `金叉：MA${s.fast}(${f.toFixed(2)}) 上穿 MA${s.slow}(${sl.toFixed(2)})。`; }
+      else {
+        choice = 'hold';
+        // 注意：MA_fast 先成型、MA_slow 还是 null 的窗口期要单独判断，
+        // 否则会对 null 调 toFixed 直接崩掉
+        note = (f === null || sl === null)
+          ? `数据不足，等待 MA${s.slow} 成型（已有 ${s.i + 1} 个交易日）。`
+          : `空仓等待金叉：MA${s.fast}(${f.toFixed(2)}) ≤ MA${s.slow}(${sl.toFixed(2)})。`;
+      }
+    }
+    const ranks = ['buy', 'hold', 'sell'].map(k => ({
+      key: k, label: k === 'buy' ? '买入' : k === 'sell' ? '卖出' : '持有',
+      score: k === choice ? 100 : 0,
+      detail: k === choice ? '规则选中'
+        : (f !== null && sl !== null) ? (f > sl ? '金叉区' : '死叉区') : '均线未成型'
+    }));
+    return { choice, ranks, note };
+  },
+
+  metrics(s, sopt) {
+    const r = this._ret(s), bh = this._bh(s);
+    return [
+      { k: '交易日', v: `${s.i}/${s.n}` },
+      { k: '收益率', v: (r * 100).toFixed(2) + '%', tone: r > 0 ? 'ok' : r < 0 ? 'bad' : '' },
+      { k: '买入持有', v: (bh * 100).toFixed(2) + '%', tone: bh > 0 ? 'ok' : 'bad' },
+      { k: '超额', v: ((r - bh) * 100).toFixed(2) + '%',
+        tone: r > bh ? 'ok' : 'bad', sm: r > bh ? '跑赢' : '跑输' },
+      { k: '最大回撤', v: (s.maxDD * 100).toFixed(1) + '%',
+        tone: s.maxDD > 0.25 ? 'bad' : s.maxDD > 0.15 ? 'warn' : 'ok', sm: '≤ 25%' },
+      { k: '交易次数', v: s.trades.length }
+    ];
+  },
+
+  render(s, el) {
+    const n = s.n, h = 150, w = 400;
+    const eq = s.equity;
+    const lo = Math.min(...eq, ...s.prices.slice(0, s.i + 1) / 1 || [1]);
+    const vals = eq.slice();
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const pt = (v, i) => `${(i / (n - 1) * w).toFixed(1)},${(h - (v - min) / Math.max(1e-9, max - min) * h).toFixed(1)}`;
+    const path = vals.map((v, i) => pt(v, i)).join(' ');
+    const buyPts = s.trades.filter(t => t.act === 'buy').map(t => t.i);
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;max-width:420px;display:block;margin:0 auto;
+        background:#fafbfc;border:1px solid var(--line2);border-radius:6px">
+      <polyline points="${path}" fill="none" stroke="#2f6fed" stroke-width="1.6"/>
+      ${buyPts.map(i => `<line x1="${(i / (n - 1) * w).toFixed(1)}" y1="0" x2="${(i / (n - 1) * w).toFixed(1)}" y2="${h}" stroke="#3fae5a" stroke-width="1" stroke-dasharray="2 3"/>`).join('')}
+      </svg>
+      <div class="hint" style="text-align:center">蓝 = 净值曲线 · 绿虚线 = 买入点 · 当前 ${s.prices[Math.min(s.i, n - 1)].toFixed(2)}</div>`;
+  },
+
+  done(s) { return s.i >= s.n; },
+  goalOk(s, sopt) {
+    if (s.i < s.n) return false;
+    const r = this._ret(s), bh = this._bh(s);
+    return r > bh && s.maxDD <= 0.25;
+  },
+  maxSteps() { return 260; }
+};
+
+</script>
+<script>
+Lab.boot();
+</script>
+</body>
+</html>
