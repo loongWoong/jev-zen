@@ -235,6 +235,62 @@ merge 判断命中 / crowding 命中 / 平均 max p / 平均 logit 极差。
 
 模型给出**非法方向**时回退到规则判决，并在留痕上标 `fallback: true`。
 
+## 决策实验场景矩阵
+
+`labs/` 下维护 15 个独立场景，每个都产出一个**自包含的单文件页面**（双击即开，`file://` 直连
+8771 的 CORS 已放行）。它们共用同一套底座：`core.js` 负责 API 客户端、决策合成、留痕、批量验证；
+场景只实现自己的规则与渲染。
+
+```
+labs/core.js          底座：Laya 客户端 / rule·mix·model 三策略 / 留痕 / 批量验证
+labs/template.html    页面骨架与样式
+labs/scenes/<name>.js 场景模块
+labs/build.py         把 底座 + 场景 内联成 <name>_laya.html
+```
+
+每个页面都提供三种策略对照：**rule**（算法主判）、**mix**（算法筛出窄带候选、模型只在带内破平）、
+**model**（Laya 直接判决），以及**批量验证**：三种策略各跑 N 局，直接给出目标达成率对比。
+
+| # | 场景 | 页面 | 每步抉择 | 算法 | 自动验证目标 | 算法实测 |
+|---|---|---|---|---|---|---|
+| 1 | 贪吃蛇 | `snake_laya.html` | 上/下/左/右 | BFS 寻食 + 洪水填充安全检查 / 哈密顿回路 | 长度 ≥ 50 | safe 样本外均长 **63.5**、达成 16/24；hamilton/hybrid **填满 100 格** |
+| 2 | 俄罗斯方块 | `tetris_laya.html` | 旋转 + 落点列 | Dellacherie 六特征 + 可选 2 层前瞻 | 消 100 行 | 5/5 局达成，约 255 块 / 6.7 万分；随机基线 0 行 |
+| 3 | 扫雷 | `minesweeper_laya.html` | 点开 / 标雷 | 单格规则 → CSP 分量枚举 → 组合数加权概率 | 9×9 高胜率 | 100 局 **83%**（basic 76% / 随机 0%） |
+| 4 | 推箱子 | `sokoban_laya.html` | 上下左右推 | A* + 角落死锁剪枝 | 解 20 关 | **20/20 关**（最优解 1~13 步，全部经求解器验证） |
+| 5 | 15 拼图 | `puzzle15_laya.html` | 滑动相邻块 | IDA*（曼哈顿 + 线性冲突） | 20 步打乱后复原 | 8/8 复原，步数 **等于最优解**（18~20 步） |
+| 6 | Lights Out | `lightsout_laya.html` | 点格子翻十字 | GF(2) 高斯消元 | 5×5 全解 | 4/5/6 阶各 10 局解集验证 **30/30** |
+| 7 | 井字棋 | `tictactoe_laya.html` | 落子 | 完整 Minimax（评分带深度） | 100% 不败 | 随机对手 **300 局 299 胜 1 和 0 败**；后手 200 局 0 败；对完美对手 20 局全和 |
+| 8 | Connect 4 | `connect4_laya.html` | 选一列落子 | Minimax + α-β | 对随机对手 95% | **40/40 全胜** |
+| 9 | 黑白棋 | `othello_laya.html` | 落子翻转 | Minimax + α-β + 位置权重 | 对随机对手 90% | 30 局 **28 胜 2 和 0 败（93.3%）** |
+| 10 | 迷宫 | `maze_laya.html` | 移动方向 | BFS / A* / DFS 对照 | 最短路 == BFS | 三种算法 12/12 局步数比 **1.00×** |
+| 11 | Flappy Bird | `flappy_laya.html` | 跳 / 不跳 | 阈值规则 + 上沿约束 | 过 100 管道 | **6/6 达成**，最高 161 个；随机基线 0 个 |
+| 12 | 打砖块 | `breakout_laya.html` | 挡板移动 | 落点预测（含顶墙反弹） | 清空砖块 | **6/8 清空**，平均 44.5/45 块；挡板不动只打掉 1 块 |
+| 13 | 电梯调度 | `elevator_laya.html` | 分配哪台电梯 | 代价估计贪心 + SCAN | 平均等待最小 | 3 台中等 **16.2** 刻度（随机派梯 17.4）；4 台 17.3 vs 1 台 28.2 |
+| 14 | 交通灯控制 | `traffic_laya.html` | 红绿灯配时 | 自适应规则 + 最小绿灯保护 | 车辆平均等待最小 | 中等 **1.47**、拥堵 **2.91**（固定配时 3.14 / 5.40） |
+| 15 | 股票买卖模拟 | `stock_laya.html` | 买 / 卖 / 持有 | 双均线交叉 + 移动止损 | 收益最大 / 回撤最小 | 20 组均收益 **19.54%** vs 买入持有 14.19%，回撤 6.4% |
+
+### 场景模块接口
+
+新增一个场景只需在 `labs/scenes/` 下写一个模块，然后 `python labs/build.py <name>`：
+
+```js
+const SCENE = {
+  id, name, sub, goal, hint,
+  controls: [{ id, label, type: 'select' | 'number' | 'checkbox' | 'range', value, options }],
+  init(seed, sopt)             // -> 纯数据 state
+  legal(state)                 // -> 合法动作键数组
+  step(state, key, sopt)       // -> { info }  就地推进
+  text(state, legal, sopt)     // -> 喂给模型的 state 文本
+  questions(state, legal)      // -> [{ id, type: 'choice'|'score'|'noul', instructions, criteria }]
+  rule(state, legal, sopt)     // -> { choice, ranks: [{key,label,score,detail,risky}], note }
+  metrics(state, sopt)         // -> [{ k, v, tone, sm }]
+  render(state, el, sopt)
+  done(state) / goalOk(state, sopt) / maxSteps(sopt)
+};
+```
+
+`criteria` 必须用 **dict**（键就是选项）；用数组时选项键会退化成 `"0","1",…`，模型看到的是无意义的下标。
+
 ## HTTP API
 
 | 方法 | 路径 | 说明 |
@@ -383,6 +439,26 @@ jev/
 ├── laya_verify.py          # 全部实现：~1960 行单文件，11 个分节
 ├── index.html              # 验证台（~640 行，由后端在 / 直接服务）
 ├── 2048_laya.html          # 2048 自动对局 + 规则策略 + 抉择留痕（~1170 行，file:// 直连 8771）
+├── labs/                   # 15 个决策实验场景
+│   ├── core.js             #   底座：API 客户端 / 三策略合成 / 留痕 / 批量验证
+│   ├── template.html       #   页面骨架与样式
+│   ├── build.py            #   底座 + 场景 → 自包含单文件页面
+│   └── scenes/             #   15 个场景模块（贪吃蛇 / 俄罗斯方块 / 扫雷 / …）
+├── snake_laya.html         # 以下 15 个均为构建产物：自包含，双击即开
+├── tetris_laya.html
+├── minesweeper_laya.html
+├── sokoban_laya.html
+├── puzzle15_laya.html
+├── lightsout_laya.html
+├── tictactoe_laya.html
+├── connect4_laya.html
+├── othello_laya.html
+├── maze_laya.html
+├── flappy_laya.html
+├── breakout_laya.html
+├── elevator_laya.html
+├── traffic_laya.html
+├── stock_laya.html
 ├── model.safetensors       # 权重 614 MiB（.gitignore 排除，需自备）
 ├── tokenizer.json          # 官方 BPE 词表 256k（34 MB）
 ├── tokenizer_config.json   # 含 <start_of_turn> / <end_of_turn>（Gemma 系词表特征）
