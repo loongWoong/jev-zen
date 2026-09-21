@@ -146,6 +146,19 @@ button.ghost:hover{background:var(--info-weak);color:var(--text)}
 .pv{text-align:right}
 .hnote{font-size:11.5px;color:var(--muted);font-family:var(--mono);margin-top:6px;
   padding-top:6px;border-top:1px dashed var(--line2);word-break:break-all}
+.subhd{font-size:10.5px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:.7px;
+  margin:10px 0 6px}
+.subhd:first-child{margin-top:0}
+.rbrow{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.rb{display:inline-flex;flex-direction:column;gap:0;font-family:var(--mono);font-size:11.5px;line-height:1.35;
+  background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;color:var(--muted)}
+.rb b{font-weight:650;color:var(--text)}
+.rb i{font-style:normal;font-size:9.5px;color:var(--dim);white-space:nowrap}
+.rb.sel{border-color:var(--accent);background:var(--accent-weak)}
+.rb.sel b{color:var(--accent)}
+.rb.off{opacity:.4}
+.rb.danger{border-color:#f5cdcd;background:var(--bad-weak)}
+.rb.danger i{color:var(--bad)}
 .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:4px;
   background:var(--info-weak);color:var(--info);border:1px solid var(--line)}
 .tag.warn{background:var(--warn-weak);color:var(--warn);border-color:#f0d9ad}
@@ -193,7 +206,9 @@ summary:hover{color:var(--text)}
             </div>
             <div class="board" id="board"></div>
           </div>
-          <div class="hint">棋盘状态以结构化文本喂给模型（<code>row1: 2 0 0 2 …</code> + 合法方向列表），模型在 <b>一次前向</b> 中同时回答「移动方向 / 拥挤度 / 能否合并」三个 typed question。</div>
+          <div class="hint" id="goalNote" style="display:none;margin-top:9px;padding:7px 10px;border-radius:7px;
+            background:var(--ok-weak);border:1px solid #bfe3dd;color:#0b5c53;font-size:12.5px"></div>
+          <div class="hint">棋盘状态以结构化文本喂给模型（<code>row1: 2 0 0 2 …</code> + 合法方向列表），模型在 <b>一次前向</b> 中同时回答「移动方向 / 拥挤度 / 能否合并」三个 typed question。规则策略只吃棋盘本身，不发请求。</div>
         </div>
       </div>
 
@@ -206,6 +221,23 @@ summary:hover{color:var(--text)}
             <button id="resetBtn">重开</button>
           </div>
           <div class="grid2">
+            <div class="full"><label class="lb">决策策略</label>
+              <select id="strategy">
+                <option value="rule" selected>规则 · 期望搜索（默认，棋力最高）</option>
+                <option value="mix">混合 · 规则主 + 模型破平</option>
+                <option value="model">模型 · 原始行为（对照用）</option>
+              </select></div>
+            <div><label class="lb">规则偏好</label>
+              <select id="prefer">
+                <option value="merge" selected>合并·空间优先 · 同档择优</option>
+                <option value="value">均衡 · 严格取搜索最优</option>
+              </select></div>
+            <div><label class="lb">搜索深度</label>
+              <select id="depth">
+                <option value="1">1 层 · 最快（&lt;1 ms）</option>
+                <option value="2" selected>2 层 · 默认（~3 ms）</option>
+                <option value="3">3 层 · 最强但很慢（~640 ms）</option>
+              </select></div>
             <div><label class="lb">决策间隔 <span id="delayV" style="font-family:var(--mono)">150 ms</span></label>
               <input type="range" id="delay" min="0" max="2000" step="50" value="150"></div>
             <div><label class="lb">choice 温度 T <span id="tempV" style="font-family:var(--mono)">1.00</span></label>
@@ -215,12 +247,22 @@ summary:hover{color:var(--text)}
             <div><label class="lb">步数上限（0 = 不限）</label><input type="number" id="maxSteps" min="0" step="10" value="0"></div>
             <div class="full row">
               <label class="row" style="gap:6px;font-size:12.5px;color:var(--muted)"><input type="checkbox" id="autoNew" checked> 结束后自动开新局</label>
-              <label class="row" style="gap:6px;font-size:12.5px;color:var(--muted)"><input type="checkbox" id="showAll" checked> 历史显示全部（否则仅异常/回退）</label>
+              <label class="row" style="gap:6px;font-size:12.5px;color:var(--muted)"><input type="checkbox" id="goalStop" checked> 达成 2048 后暂停</label>
+              <label class="row" style="gap:6px;font-size:12.5px;color:var(--muted)"><input type="checkbox" id="callModel" checked> 规则模式下仍调用模型（留痕对照）</label>
+              <label class="row" style="gap:6px;font-size:12.5px;color:var(--muted)"><input type="checkbox" id="showAll" checked> 历史显示全部</label>
             </div>
           </div>
           <div class="hint">
-            温度只作用于 <code>choice</code>（以 <code>temperature_mode: manual</code> 下发）。T↑ 更平、T↓ 更尖锐 ——
-            但当前词表非官方，四方向 logits 差异仅 ~1e-2，改变 T 基本不改变排序。
+            <b>规则策略的判决优先级</b>：① <b>存活</b> —— 只要存在「零死亡风险」的方向就只在其中选
+            （风险 = 该步之后随机 spawn 立刻无路可走的概率，按 2 占 90% / 4 占 10% 计）；
+            ② <b>期望搜索价值</b> —— 局面评估里 <code>MERGES_WEIGHT=700</code> 奖励相邻同值对（合并更多）、
+            <code>EMPTY_WEIGHT=270</code> 奖励空格（保留可选空间）、<code>MONO_WEIGHT=47</code> 要求贴边成序、
+            <code>CORNER_WEIGHT=150</code> 奖励最大方块守角（突破 2048 的结构），死局另加 <code>1e7</code> 惩罚；
+            ③ <b>同档破平</b> —— 最优值 2% 的窄带内，按「合并数 → 空格数」择优。<br>
+            <b>为什么带宽这么窄</b>：24 局配对实测，窄带择优比严格取最优好但不显著
+            （+1.8k~+3.3k 分，SE ±5k）；而一旦把带宽放到 ≥50%（让合并压倒价值）就<b>显著变差</b>
+            （−12.9k 分，SE ±3.6k，胜/负 8/16）。所以合并与空间只能当破平项，不能凌驾于搜索价值之上。<br>
+            温度只作用于 <code>choice</code>（<code>temperature_mode: manual</code>），仅影响「模型」「混合」两种策略的破平，不影响规则主判决。
           </div>
         </div>
       </div>
@@ -228,19 +270,27 @@ summary:hover{color:var(--text)}
       <div class="card">
         <div class="hd">统计<span class="sub">decision channel</span></div>
         <div class="bd">
+          <div class="subhd">对局</div>
           <div class="stats">
             <div class="st"><div class="n" id="sGames">0</div><div class="t">对局数</div></div>
             <div class="st"><div class="n" id="sMoves">0</div><div class="t">总步数</div></div>
             <div class="st"><div class="n" id="sBest">0</div><div class="t">最高分</div></div>
-            <div class="st"><div class="n" id="sTile">0</div><div class="t">最大方块</div></div>
-            <div class="st"><div class="n" id="sFb">—</div><div class="t">回退率</div><div class="sm" id="sFbSub">0 / 0</div></div>
+            <div class="st"><div class="n" id="sTile">0</div><div class="t">最大方块</div><div class="sm">目标 2048</div></div>
+            <div class="st"><div class="n" id="sWin">0</div><div class="t">达成 2048</div><div class="sm" id="sWinSub">0 / 0 局</div></div>
+            <div class="st"><div class="n" id="sMergeRate">—</div><div class="t">平均每步合并</div><div class="sm">越多越好</div></div>
+            <div class="st"><div class="n" id="sEmpty">—</div><div class="t">平均剩余空格</div><div class="sm">16 为满盘</div></div>
             <div class="st"><div class="n" id="sLat">—</div><div class="t">平均延迟</div><div class="sm" id="sLatSub">ms / 次前向</div></div>
+          </div>
+          <div class="subhd">决策通道（模型 vs 规则）</div>
+          <div class="stats">
+            <div class="st"><div class="n" id="sAgree">—</div><div class="t">规则·模型一致</div><div class="sm" id="sAgreeSub">0 / 0</div></div>
+            <div class="st"><div class="n" id="sFb">—</div><div class="t">回退率</div><div class="sm" id="sFbSub">0 / 0</div></div>
             <div class="st"><div class="n" id="sMerge">—</div><div class="t">merge 判断命中</div><div class="sm" id="sMergeSub">vs 真值</div></div>
             <div class="st"><div class="n" id="sCrowd">—</div><div class="t">crowding 命中</div><div class="sm" id="sCrowdSub">vs 真值</div></div>
             <div class="st"><div class="n" id="sConf">—</div><div class="t">平均 max p</div><div class="sm">均匀基线 25%</div></div>
             <div class="st"><div class="n" id="sSpread">—</div><div class="t">平均 logit 极差</div><div class="sm" id="sSpreadSub">通道增益，应 ≫0.01</div></div>
           </div>
-          <div class="hint">「回退率」= 模型给出无效方向（棋盘不变）被改为次优合法方向的占比。「命中」= 模型作答与棋盘真值一致的比例，用来量化决策通道质量。</div>
+          <div class="hint">「回退率」= 选定方向非法（棋盘不变）被改为次优合法方向的占比。「规则·模型一致」= 模型选的方向与规则判决相同的比例 —— 在通道未对齐时它应接近随机水平（4 方向 → ~25%）。</div>
         </div>
       </div>
 
@@ -412,6 +462,168 @@ function createGame(N, seedText){
   return g.reset();
 }
 /* ================================================================== */
+/*  规则策略：局面评估 + 期望搜索                                        */
+/*  目标优先级：① 存活（不死） ② 期望搜索价值（内含合并/空间/守角）        */
+/*              ③ 同档内「合并更多」或「保留更多空格」破平                */
+/* ================================================================== */
+const HEUR = {
+  LOST_PENALTY: 200000,   // 每条线的基础惩罚（真实得分靠它抵消，不是常数项）
+  MONO_POWER: 4, MONO_WEIGHT: 47,     // 单调性：贴边成序，越序惩罚越重
+  SUM_POWER: 3.5, SUM_WEIGHT: 11,     // 面值和：抑制「大块独大」，保住灵活性
+  MERGES_WEIGHT: 700,                 // 相邻同值对数 → 「优先合并更多的可合并数字」
+  EMPTY_WEIGHT: 270,                  // 空格数 → 「保持更多可选空间」
+  CORNER_WEIGHT: 150,                 // 最大方块守角 → 突破 2048 的关键结构
+  DEATH_PENALTY: 1e7,                 // 死局：最重惩罚 → 「优先存活」
+  PROB_THRESH: 1e-4
+};
+const POW35 = [], POW4 = [];
+for (let i = 0; i <= 24; i++){ POW35.push(Math.pow(i, 3.5)); POW4.push(Math.pow(i, 4)); }
+const _rk = new Float64Array(16);
+
+/* 局面评估：行 + 列各算一次线价值，再加「最大方块守角」奖励。值越大越好。 */
+function evalBoard(bd, N, W){
+  W = W || HEUR;
+  let s = 0, empty, merges, sum, ml, mr, k, p, v;
+  for (let r = 0; r < N; r++){
+    empty = 0; merges = 0; sum = 0; ml = 0; mr = 0;
+    for (let c = 0; c < N; c++){
+      v = bd[r][c]; k = v ? (Math.log2(v) | 0) : 0;
+      if (k === 0) empty++;
+      else { if (c > 0 && k === _rk[c-1]) merges++; sum += POW35[k]; }
+      if (c > 0){ p = _rk[c-1]; if (p > k) ml += POW4[p] - POW4[k]; else mr += POW4[k] - POW4[p]; }
+      _rk[c] = k;
+    }
+    s += W.LOST_PENALTY + W.EMPTY_WEIGHT * empty + W.MERGES_WEIGHT * merges
+       - W.MONO_WEIGHT * (ml < mr ? ml : mr) - W.SUM_WEIGHT * sum;
+  }
+  for (let c = 0; c < N; c++){
+    empty = 0; merges = 0; sum = 0; ml = 0; mr = 0;
+    for (let r = 0; r < N; r++){
+      v = bd[r][c]; k = v ? (Math.log2(v) | 0) : 0;
+      if (k === 0) empty++;
+      else { if (r > 0 && k === _rk[r-1]) merges++; sum += POW35[k]; }
+      if (r > 0){ p = _rk[r-1]; if (p > k) ml += POW4[p] - POW4[k]; else mr += POW4[k] - POW4[p]; }
+      _rk[r] = k;
+    }
+    s += W.LOST_PENALTY + W.EMPTY_WEIGHT * empty + W.MERGES_WEIGHT * merges
+       - W.MONO_WEIGHT * (ml < mr ? ml : mr) - W.SUM_WEIGHT * sum;
+  }
+  if (W.CORNER_WEIGHT){
+    let m = 0, cr = -1, cc = -1;
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++){
+      v = bd[r][c]; if (v > m){ m = v; cr = r; cc = c; }
+    }
+    if (m && (cr === 0 || cr === N - 1) && (cc === 0 || cc === N - 1)) s += W.CORNER_WEIGHT * Math.log2(m);
+  }
+  return s;
+}
+
+/* 极大节点（轮到我走）。depth 为剩余「我方步数」层数；depth<=0 直接对落子后的盘面估值。 */
+function searchMax(bd, N, depth, prob, W){
+  let best = -Infinity, any = false, res, v;
+  for (let i = 0; i < 4; i++){
+    res = applyMove(bd, DIRS[i], N);
+    if (!res.moved) continue;
+    any = true;
+    v = (depth <= 0) ? evalBoard(res.board, N, W) : searchChance(res.board, N, depth - 1, prob, W);
+    if (v > best) best = v;
+  }
+  if (!any) return -W.DEATH_PENALTY;   // 无路可走 = 死局
+  return best;
+}
+/* 期望节点（随机 spawn）。depth<=0 时对 spawn 后盘面取期望后估值。 */
+function searchChance(bd, N, depth, prob, W){
+  const es = emptyList(bd, N);
+  if (!es.length) return searchMax(bd, N, depth, prob, W);
+  let s = 0, r, c, cell;
+  if (depth <= 0 || prob / es.length < W.PROB_THRESH){
+    for (let i = 0; i < es.length; i++){
+      cell = es[i]; r = cell[0]; c = cell[1];
+      bd[r][c] = 2; s += 0.9 * evalBoard(bd, N, W);
+      bd[r][c] = 4; s += 0.1 * evalBoard(bd, N, W);
+      bd[r][c] = 0;
+    }
+    return s / es.length;
+  }
+  const p = prob / es.length;
+  for (let i = 0; i < es.length; i++){
+    cell = es[i]; r = cell[0]; c = cell[1];
+    bd[r][c] = 2; s += 0.9 * searchMax(bd, N, depth, p * 0.9, W);
+    bd[r][c] = 4; s += 0.1 * searchMax(bd, N, depth, p * 0.1, W);
+    bd[r][c] = 0;
+  }
+  return s / es.length;
+}
+
+/* 规则决策：对每个合法方向给出分解（价值 / 立即合并数 / 移动后空格 / 死亡风险），按优先级选一个。
+   优先级：① 存活（存在零死亡风险方向时只在其中选）② 期望搜索价值 ③ 同档内合并数 / 空格数破平 */
+function ruleDecision(bd, N, opts){
+  opts = opts || {};
+  const depth = opts.depth == null ? 2 : opts.depth;
+  const prefer = opts.prefer || 'value';
+  const W = opts.weights || HEUR;
+  const legal = validMoves(bd, N);
+  const set = {};
+  for (const d of legal) set[d] = 1;
+  const byDir = {};
+  for (const d of DIRS){
+    if (!set[d]){ byDir[d] = { legal: false }; continue; }
+    const res = applyMove(bd, d, N);
+    const es = emptyList(res.board, N);
+    // 死亡风险：这一步之后随机 spawn，若立刻无路可走则计风险（2 占 90%、4 占 10%）
+    let dead = 0;
+    for (let i = 0; i < es.length; i++){
+      const r = es[i][0], c = es[i][1];
+      res.board[r][c] = 2; if (validMoves(res.board, N).length === 0) dead += 0.9;
+      res.board[r][c] = 4; if (validMoves(res.board, N).length === 0) dead += 0.1;
+      res.board[r][c] = 0;
+    }
+    byDir[d] = {
+      legal: true,
+      value: searchChance(res.board, N, depth - 1, 1, W),
+      merges: res.merges, gained: res.gained,
+      emptiesAfter: es.length,
+      deadRisk: es.length ? dead / es.length : 1
+    };
+  }
+  const vmax = Math.max(...legal.map(d => byDir[d].value));
+  const vmin = Math.min(...legal.map(d => byDir[d].value));
+  const vspan = vmax - vmin;
+  for (const d of legal){
+    byDir[d].rel = vspan > 0 ? (byDir[d].value - vmin) / vspan : 1;
+  }
+  // ① 存活优先
+  let pool = legal.filter(d => byDir[d].deadRisk === 0);
+  const surviveAll = pool.length > 0;
+  if (!pool.length) pool = legal.slice();
+  // ② 期望价值；③ 同档内按偏好破平
+  const pmax = Math.max(...pool.map(d => byDir[d].value));
+  const pmin = Math.min(...pool.map(d => byDir[d].value));
+  // 档位宽度：0 = 严格取搜索最优；0.02 = 同档内按偏好破平。
+  // 24 局配对实测：band 0.02/0.05/0.15 均优于 band 0 但不显著（+1.8k~+3.3k，SE ±5k），
+  // 而 band ≥ 0.5（让合并压倒价值）显著变差（−12.9k，SE ±3.6k，胜/负 8/16）。故取 0.02。
+  const band = opts.band != null ? opts.band : (prefer === 'value' ? 0 : 0.02);
+  const near = pool.filter(d => pmax - byDir[d].value <= band * (pmax - pmin));
+  const cmps = {
+    value: (a, b) => byDir[b].value - byDir[a].value || byDir[b].merges - byDir[a].merges
+                     || byDir[b].emptiesAfter - byDir[a].emptiesAfter,
+    merge: (a, b) => byDir[b].merges - byDir[a].merges || byDir[b].emptiesAfter - byDir[a].emptiesAfter
+                     || byDir[b].value - byDir[a].value,
+    // 实测与 merge 逐位相同（24 局分歧 0），保留仅为可证伪 / 后续复测
+    space: (a, b) => byDir[b].emptiesAfter - byDir[a].emptiesAfter || byDir[b].merges - byDir[a].merges
+                     || byDir[b].value - byDir[a].value
+  };
+  near.sort(cmps[prefer] || cmps.value);
+  return {
+    byDir, depth, prefer, surviveAll, near,
+    order: legal.slice().sort((a, b) => byDir[b].value - byDir[a].value),
+    choice: near[0]
+  };
+}
+/* 无模型时的便捷入口：直接返回方向 */
+function chooseByRules(bd, N, opts){ return ruleDecision(bd, N, opts).choice; }
+
+/* ================================================================== */
 /*  2048 ENGINE END                                                     */
 /* ================================================================== */
 
@@ -466,11 +678,12 @@ const TILE = {
 let N = 4;
 let G = createGame(N, '2048');
 let HISTORY = [];
-let LAST = null;
+let LAST = null, LASTRAW = null;
 let running = false, busy = false, gen = 0, freshIdx = -1;
-const STAT = { games: 0, moves: 0, best: 0, bestTile: 0, fb: 0, valid: 0,
-               mergeHit: 0, mergeTot: 0, crowdHit: 0, crowdTot: 0, latSum: 0, confSum: 0,
-               spreadSum: 0, spreadN: 0, errs: 0 };
+const STAT = { games: 0, moves: 0, best: 0, bestTile: 0, fb: 0, win2048: 0,
+               merges: 0, emptySum: 0, latN: 0,
+               mergeHit: 0, mergeTot: 0, crowdHit: 0, crowdTot: 0, cmpHit: 0, cmpTot: 0,
+               latSum: 0, confSum: 0, spreadSum: 0, spreadN: 0, errs: 0 };
 
 function tileStyle(v){
   const t = TILE[v] || ['#3c3a32', '#ffffff'];
@@ -514,18 +727,28 @@ function flashGain(v){
   setTimeout(() => el.classList.remove('show'), 700);
 }
 function renderStats(){
+  const mv = STAT.moves;
   $('sGames').textContent = STAT.games;
-  $('sMoves').textContent = STAT.moves;
+  $('sMoves').textContent = mv;
   $('sBest').textContent = STAT.best;
   $('sTile').textContent = STAT.bestTile || 0;
-  $('sFb').textContent = STAT.moves ? pct1(STAT.fb / STAT.moves) : '—';
-  $('sFbSub').textContent = `${STAT.fb} / ${STAT.moves}`;
-  $('sLat').textContent = STAT.moves ? Math.round(STAT.latSum / STAT.moves) : '—';
+  $('sTile').style.color = STAT.bestTile >= 2048 ? 'var(--ok)' : '';
+  $('sWin').textContent = STAT.win2048;
+  $('sWinSub').textContent = `${STAT.win2048} / ${STAT.games} 局`;
+  $('sWin').style.color = STAT.win2048 ? 'var(--ok)' : '';
+  $('sMergeRate').textContent = mv ? (STAT.merges / mv).toFixed(2) : '—';
+  $('sEmpty').textContent = mv ? (STAT.emptySum / mv).toFixed(2) : '—';
+  $('sLat').textContent = STAT.latN ? Math.round(STAT.latSum / STAT.latN) : '—';
+  $('sLatSub').textContent = STAT.latN ? `ms / 次前向（${STAT.latN} 次）` : '未调用模型';
+  $('sAgree').textContent = STAT.cmpTot ? pct1(STAT.cmpHit / STAT.cmpTot) : '—';
+  $('sAgreeSub').textContent = `${STAT.cmpHit} / ${STAT.cmpTot}${STAT.cmpTot ? '（随机基线 25%）' : ''}`;
+  $('sFb').textContent = mv ? pct1(STAT.fb / mv) : '—';
+  $('sFbSub').textContent = `${STAT.fb} / ${mv}`;
   $('sMerge').textContent = STAT.mergeTot ? pct1(STAT.mergeHit / STAT.mergeTot) : '—';
   $('sMergeSub').textContent = `${STAT.mergeHit} / ${STAT.mergeTot}`;
   $('sCrowd').textContent = STAT.crowdTot ? pct1(STAT.crowdHit / STAT.crowdTot) : '—';
   $('sCrowdSub').textContent = `${STAT.crowdHit} / ${STAT.crowdTot}`;
-  $('sConf').textContent = STAT.moves ? pct1(STAT.confSum / STAT.moves) : '—';
+  $('sConf').textContent = STAT.cmpTot ? pct1(STAT.confSum / STAT.cmpTot) : '—';
   const sp = STAT.spreadN ? STAT.spreadSum / STAT.spreadN : null;
   $('sSpread').textContent = sp === null ? '—' : sp.toExponential(1);
   $('sSpreadSub').textContent = sp === null ? '通道增益，应 ≫0.01'
@@ -533,42 +756,64 @@ function renderStats(){
   $('sSpreadSub').style.color = (sp !== null && sp <= 1e-2) ? 'var(--warn)' : '';
 }
 function entryHTML(h){
+  const rl = h.rule, bd = rl.byDir;
+  // 规则分解：每个合法方向 → 相对价值 / 立即合并数 / 移动后空格 / 死亡风险
+  const ruleBars = DIRS.map(d => {
+    const it = bd[d];
+    if (!it || !it.legal) return `<span class="rb off"><b>${DIR_ARROW[d]}</b><i>非法</i></span>`;
+    const danger = it.deadRisk > 0;
+    const cls = 'rb' + (d === rl.choice ? ' sel' : '') + (danger ? ' danger' : '');
+    return `<span class="${cls}"><b>${DIR_ARROW[d]} ${it.rel.toFixed(2)}</b>`
+         + `<i>合并 ${it.merges} · 空格 ${it.emptiesAfter}${danger ? ' · 险 ' + (it.deadRisk * 100).toFixed(0) + '%' : ''}</i></span>`;
+  }).join('');
   const probs = DIRS.map(d => {
-    const p = h.probs[d] ?? 0;
+    const p = h.probs ? (h.probs[d] ?? 0) : null;
     const sel = d === h.applied ? ' sel' : '';
     return `<div class="pb${sel}"><span>${DIR_ARROW[d]}</span>
-      <span class="ptrack"><span class="pfill" style="width:${Math.min(100, p * 100).toFixed(1)}%"></span></span>
-      <span class="pv">${pct1(p)}</span></div>`;
+      <span class="ptrack"><span class="pfill" style="width:${p === null ? 0 : Math.min(100, p * 100).toFixed(1)}%"></span></span>
+      <span class="pv">${p === null ? '—' : pct1(p)}</span></div>`;
   }).join('');
   const cls = h.moved ? (h.fallback ? ' fb' : '') : ' bad';
   const badge = h.moved
-    ? (h.fallback ? `<span class="tag warn">模型选 ${esc(h.modelChoice)} 无效 → 回退 ${esc(h.applied)}</span>`
-                  : `<span class="tag ok">有效</span>`)
+    ? (h.fallback ? `<span class="tag warn">所选方向非法 → 回退 ${esc(h.applied)}</span>` : `<span class="tag ok">有效</span>`)
     : `<span class="tag bad">无合法移动</span>`;
+  const src = { rule: '规则', mix: '混合', model: '模型' }[h.source] || h.source;
+  const srcTag = `<span class="tag">${esc(src)}</span>`;
+  let agreeTag = '';
+  if (h.modelChoice != null){
+    const same = h.modelChoice === rl.choice;
+    agreeTag = `<span class="hp">模型 ${esc(h.modelChoice)}${h.modelP != null ? ' p=' + pct1(h.modelP) : ''}</span>`
+             + `<span class="tag${same ? ' ok' : ' warn'}">${same ? '与规则一致' : '与规则分歧'}</span>`;
+  }
+  const note = [`score ${h.scoreBefore} → ${h.score}`, `合并 ${h.merges}`, `剩余空格 ${h.rule.byDir[h.applied] ? h.rule.byDir[h.applied].emptiesAfter : '—'}`,
+                `规则 ${h.ruleMs} ms`];
+  if (h.tokens != null) note.push(`tokens ${h.tokens}`, `模型延迟 ${h.latencyMs} ms`);
   const truthBits = [];
-  if (h.truthMerge !== null) truthBits.push(`merge 真值 ${h.truthMerge ? 'yes' : 'no'} / 模型 ${h.modelMerge ? 'yes' : 'no'}(${h.mergeP.toFixed(3)})`);
-  if (h.truthCrowd !== null) truthBits.push(`crowding 真值 ${h.truthCrowd} / 模型 ${h.modelCrowd}`);
-  truthBits.push(`tokens ${h.tokens}`, `latency ${h.latencyMs} ms`);
+  if (h.truthMerge != null) truthBits.push(`merge 真值 ${h.truthMerge ? 'yes' : 'no'} / 模型 ${h.modelMerge ? 'yes' : 'no'}`);
+  if (h.truthCrowd != null) truthBits.push(`crowding 真值 ${h.truthCrowd} / 模型 ${h.modelCrowd}`);
   return `<div class="he${cls}${h.i === freshIdx ? ' fresh' : ''}">
     <div class="hhd">
       <span class="hidx">#${h.i}</span>
       <span class="hdir">${DIR_ARROW[h.applied] || '·'} ${esc(h.applied)}</span>
-      <span class="hp">模型 ${esc(h.modelChoice)} p=${pct1(h.modelP)}</span>
+      ${srcTag}
+      ${agreeTag}
       ${badge}
       <span class="hgain">+${h.gained}</span>
       ${h.spawn ? `<span class="hp">spawn ${h.spawn.v}</span>` : ''}
-      <span class="hmeta">${h.latencyMs} ms</span>
+      <span class="hmeta">${h.latencyMs != null ? h.latencyMs + ' ms' : h.ruleMs + ' ms'}</span>
     </div>
     <div class="hbd">
       <div class="minis">${miniBoard(h.before)}<span class="hidx">→</span>${miniBoard(h.after)}</div>
       <div class="hbars">${probs}</div>
     </div>
-    <div class="hnote">score ${h.scoreBefore} → ${h.score}　|　${truthBits.join('　|　')}</div>
+    <div class="rbrow">${ruleBars}</div>
+    <div class="hnote">${note.join('　|　')}${truthBits.length ? '　|　' + truthBits.join('　|　') : ''}</div>
   </div>`;
 }
 function renderHistory(){
   const only = !$('showAll').checked;
-  const list = only ? HISTORY.filter(h => h.fallback || !h.moved) : HISTORY;
+  const list = only ? HISTORY.filter(h => h.fallback || !h.moved
+                    || (h.modelChoice != null && h.modelChoice !== h.rule.choice)) : HISTORY;
   const shown = list.slice(-80);
   const box = $('hist');
   if (!HISTORY.length){
@@ -581,11 +826,20 @@ function renderHistory(){
   $('histSub').textContent = only ? `${list.length} 条异常 / 共 ${HISTORY.length} 条` : `${HISTORY.length} 条`;
   box.scrollTop = box.scrollHeight;
 }
-function renderLast(j, stateText){
-  LAST = { request: { state: stateText }, response: j };
-  const r = j.result, m = r.meta, a = r.answers;
-  $('lastOut').innerHTML = `
-    <div class="row" style="gap:6px;margin-bottom:8px">
+function renderLast(h, stateText){
+  const rl = h.rule, bd = rl.byDir;
+  const ruleBars = DIRS.map(d => {
+    const it = bd[d];
+    if (!it || !it.legal) return `<span class="rb off"><b>${DIR_ARROW[d]}</b><i>非法</i></span>`;
+    const danger = it.deadRisk > 0;
+    const cls = 'rb' + (d === rl.choice ? ' sel' : '') + (danger ? ' danger' : '');
+    return `<span class="${cls}"><b>${DIR_ARROW[d]} ${it.rel.toFixed(2)}</b>`
+         + `<i>value ${it.value.toFixed(0)} · 合并 ${it.merges} · 空格 ${it.emptiesAfter} · 险 ${(it.deadRisk * 100).toFixed(0)}%</i></span>`;
+  }).join('');
+  let head;
+  if (h.tokens != null && LASTRAW){
+    const m = LASTRAW.meta, a = LASTRAW.answers;
+    head = `<div class="row" style="gap:6px;margin-bottom:8px">
       <span class="tag">tokens ${m.tokens}</span>
       <span class="tag">1 次前向 / ${m.n_questions} 问</span>
       <span class="tag">${m.n_markers} markers</span>
@@ -593,9 +847,19 @@ function renderLast(j, stateText){
       <span class="tag${m.tokenizer_faithful ? ' ok' : ' warn'}">${esc(m.tokenizer)}</span>
       <span class="tag${m.health.has_nan || m.health.has_inf ? ' bad' : ' ok'}">NaN=${m.health.has_nan} Inf=${m.health.has_inf}</span>
     </div>
-    <div class="hint" style="margin:0 0 6px">choice ranking：${a.move.ranking.map(x => `${esc(x.key)} ${pct1(x.p)}`).join('　')}</div>
-    <details open><summary>喂给模型的状态文本（state）</summary><pre>${esc(stateText)}</pre></details>
-    <details><summary>完整响应 JSON</summary><pre>${esc(JSON.stringify(r, null, 2))}</pre></details>`;
+    <div class="hint" style="margin:0 0 6px">choice ranking：${a.move.ranking.map(x => `${esc(x.key)} ${pct1(x.p)}`).join('　')}</div>`;
+  } else {
+    head = `<div class="row" style="gap:6px;margin-bottom:8px">
+      <span class="tag ok">纯规则 · 未调用模型</span>
+      <span class="tag">搜索 ${rl.depth} 层</span>
+      <span class="tag">${h.ruleMs} ms</span>
+      <span class="tag">${rl.surviveAll ? '全部方向均零死亡风险' : '存在致命方向，已按最小风险筛选'}</span>
+    </div>`;
+  }
+  $('lastOut').innerHTML = head
+    + `<div class="rbrow" style="margin-top:0">${ruleBars}</div>`
+    + `<details open><summary>喂给模型的状态文本（state）</summary><pre>${esc(stateText)}</pre></details>`
+    + (LASTRAW ? `<details><summary>完整响应 JSON</summary><pre>${esc(JSON.stringify(LASTRAW, null, 2))}</pre></details>` : '');
 }
 
 /* ======================== 决策 ======================== */
@@ -605,64 +869,94 @@ async function decide(){
   const valid = validMoves(before, N);
   const stateText = buildState(before, scoreBefore, N, valid);
   const temp = parseFloat($('temp').value) || 1;
+  // 兜底默认值：即便某个 select 取值意外为空，行为也与页面默认一致
+  const strategy = $('strategy').value || 'rule';
+  const prefer = $('prefer').value || 'merge';
+  const depth = parseInt($('depth').value, 10) || 2;
 
-  const t0 = performance.now();
-  const j = await call('/api/predict', {
-    state: stateText,
-    questions: buildQuestions(),
-    config: { temperature_mode: 'manual', temperature_manual: [temp, 1, 1] }
-  });
-  const wallMs = Math.round(performance.now() - t0);
-  const r = j.result, a = r.answers;
+  /* ---- 1) 规则判决：永远计算 —— 既是主判决，也是模型的对照基准 ---- */
+  const tR = performance.now();
+  const rd = ruleDecision(before, N, { depth, prefer });
+  const ruleMs = Math.round((performance.now() - tR) * 100) / 100;
 
-  const modelChoice = a.move.choice;
-  const modelP = a.move.confidence;
-  const probs = a.move.probs || {};
-  const ranking = a.move.ranking || DIRS.map(d => ({ key: d, p: probs[d] || 0 }));
-  // 通道增益读数：四个方向 logits 的极差。字面可判定任务上应 ≫1e-2；
-  // 若只有 ~1e-3，说明决策头几乎没读到上下文，概率排序不具实际含义。
-  const spread = (typeof a.move.logit_spread === 'number') ? a.move.logit_spread : null;
-
-  let applied = modelChoice, fallback = false;
-  if (!valid.includes(modelChoice)){
-    fallback = true;
-    const alt = ranking.find(x => valid.includes(x.key));
-    applied = alt ? alt.key : (valid[0] || modelChoice);
+  /* ---- 2) 模型判决（可选，仅用于对照 / 混合破平） ---- */
+  let meta = null, modelChoice = null, modelP = null, probs = null, spread = null, raw = null;
+  let truthMerge = null, modelMerge = null, truthCrowd = null, modelCrowd = null;
+  const wantModel = !!API_BASE && (strategy === 'model' || strategy === 'mix' || $('callModel').checked);
+  if (wantModel){
+    const j = await call('/api/predict', {
+      state: stateText,
+      questions: buildQuestions(),
+      config: { temperature_mode: 'manual', temperature_manual: [temp, 1, 1] }
+    });
+    const r = j.result, a = r.answers;
+    raw = r;
+    meta = r.meta;
+    modelChoice = a.move.choice;
+    modelP = a.move.confidence;
+    probs = a.move.probs || {};
+    spread = (typeof a.move.logit_spread === 'number') ? a.move.logit_spread : null;
+    truthMerge = canMerge(before, N);
+    modelMerge = (a.merge_available?.noul ?? 0) >= 0.5;
+    truthCrowd = truthCrowdingLevel(before, N);
+    modelCrowd = a.crowding ? (a.crowding.argmax_level ?? null) : null;
   }
 
-  let mv = { moved: false, gained: 0, merges: 0, spawn: null };
-  if (valid.includes(applied)) mv = G.apply(applied);
+  /* ---- 3) 合成最终方向 ---- */
+  let applied, source = 'rule', fallback = false;
+  if (strategy === 'model' && modelChoice){
+    source = 'model';
+    if (valid.includes(modelChoice)) applied = modelChoice;
+    else { fallback = true; applied = rd.choice; }   // 模型给了无效方向 → 回退到规则
+  } else if (strategy === 'mix' && modelChoice){
+    source = 'mix';
+    // 规则已按「存活硬门 + 2% 价值带」筛出候选，仅在其中用模型概率破平，模型选不到带外的坏方向
+    const cand = rd.near.length ? rd.near : [rd.choice];
+    let bp = -1;
+    applied = cand[0];
+    for (const d of cand){ const p = probs[d] ?? 0; if (p > bp){ bp = p; applied = d; } }
+  } else {
+    if (strategy !== 'rule') source = 'rule(降级)';
+    applied = rd.choice;
+  }
+  if (!valid.includes(applied)){ fallback = true; applied = valid[0]; }
+
+  const mv = G.apply(applied);
   const after = G.snapshot();
 
-  const truthMerge = canMerge(before, N);
-  const modelMerge = (a.merge_available?.noul ?? 0) >= 0.5;
-  const truthCrowd = truthCrowdingLevel(before, N);
-  const modelCrowd = a.crowding?.argmax_level ?? null;
-
+  /* ---- 4) 统计与留痕 ---- */
   STAT.moves++;
   if (fallback) STAT.fb++;
-  STAT.latSum += r.meta.latency_ms;
-  STAT.confSum += modelP;
-  if (spread !== null) { STAT.spreadSum += spread; STAT.spreadN++; }
-  STAT.mergeTot++; if (modelMerge === truthMerge) STAT.mergeHit++;
-  STAT.crowdTot++; if (modelCrowd === truthCrowd) STAT.crowdHit++;
+  STAT.merges += mv.merges;
+  STAT.emptySum += emptyList(after, N).length;
+  if (meta){
+    STAT.latSum += meta.latency_ms; STAT.latN++;
+    STAT.confSum += modelP;
+    if (spread !== null){ STAT.spreadSum += spread; STAT.spreadN++; }
+    STAT.mergeTot++; if (modelMerge === truthMerge) STAT.mergeHit++;
+    STAT.crowdTot++; if (modelCrowd === truthCrowd) STAT.crowdHit++;
+    STAT.cmpTot++;   if (modelChoice === rd.choice) STAT.cmpHit++;
+  }
   STAT.best = Math.max(STAT.best, G.score);
   STAT.bestTile = Math.max(STAT.bestTile, maxTile(after));
 
   const h = {
     i: HISTORY.length + 1,
     before, after,
-    modelChoice, modelP, probs, ranking, spread,
-    applied, fallback, moved: mv.moved, gained: mv.gained, spawn: mv.spawn,
+    source,
+    rule: { choice: rd.choice, depth: rd.depth, prefer: rd.prefer, surviveAll: rd.surviveAll, byDir: rd.byDir },
+    modelChoice, modelP, probs, spread,
+    applied, fallback, moved: mv.moved, gained: mv.gained, spawn: mv.spawn, merges: mv.merges,
     scoreBefore, score: G.score,
-    truthMerge, modelMerge, mergeP: a.merge_available?.noul ?? 0,
-    truthCrowd, modelCrowd,
-    tokens: r.meta.tokens, latencyMs: r.meta.latency_ms, wallMs,
+    truthMerge, modelMerge, truthCrowd, modelCrowd,
+    tokens: meta ? meta.tokens : null,
+    latencyMs: meta ? meta.latency_ms : null,
+    ruleMs,
     temperature: temp, ts: Date.now()
   };
   HISTORY.push(h);
   freshIdx = h.i;
-  return { h, raw: r, stateText };
+  return { h, stateText, raw };
 }
 
 async function doStep(){
@@ -672,11 +966,12 @@ async function doStep(){
   $('stepBtn').disabled = true;
   try{
     const { h, raw, stateText } = await decide();
+    LASTRAW = raw;
     renderBoard(h.spawn);
     flashGain(h.gained);
     renderStats();
     renderHistory();
-    renderLast({ ok: true, result: raw }, stateText);
+    renderLast(h, stateText);
     $('errBox').style.display = 'none';
   }catch(e){
     STAT.errs++;
@@ -694,13 +989,16 @@ async function doStep(){
 async function runLoop(){
   const my = ++gen;
   running = true;
+  hideGoal();
   syncButtons();
   renderBoard();
   while (running && my === gen){
     if (G.gameOver()){
       STAT.games++;
+      if (maxTile(G.board) >= 2048) STAT.win2048++;
       renderStats();
       renderBoard();
+      renderHistory();
       if (!$('autoNew').checked){ running = false; break; }
       await sleep(650);
       if (!running || my !== gen) break;
@@ -711,6 +1009,15 @@ async function runLoop(){
     if (cap && G.moves >= cap){ running = false; break; }
     await doStep();
     if (!running || my !== gen) break;
+    // 目标达成（突破 2048）：默认暂停，让用户看到结果
+    if ($('goalStop').checked && maxTile(G.board) >= 2048){
+      STAT.win2048++;
+      running = false;
+      renderStats();
+      showGoal(`已达成目标 <b>2048</b> —— 当前最大方块 ${maxTile(G.board)}，得分 ${G.score}，共 ${G.moves} 步。` +
+               `已按设置自动暂停（取消勾选「达成 2048 后暂停」即可继续冲更高）。`);
+      break;
+    }
     const d = parseInt($('delay').value, 10) || 0;
     if (d) await sleep(d);
   }
@@ -718,6 +1025,8 @@ async function runLoop(){
   syncButtons();
   renderBoard();
 }
+function showGoal(html){ const el = $('goalNote'); el.innerHTML = html; el.style.display = 'block'; }
+function hideGoal(){ $('goalNote').style.display = 'none'; }
 
 function syncButtons(){
   const b = $('runBtn');
@@ -728,27 +1037,48 @@ function syncButtons(){
 function stopLoop(){ running = false; gen++; syncButtons(); renderBoard(); }
 function newGame(keepStats){
   G = createGame(N, $('seed').value || '2048');
-  if (!keepStats) { HISTORY = []; STAT.games = 0; STAT.moves = 0; STAT.best = 0; STAT.bestTile = 0;
-    STAT.fb = 0; STAT.mergeHit = 0; STAT.mergeTot = 0; STAT.crowdHit = 0; STAT.crowdTot = 0;
-    STAT.latSum = 0; STAT.confSum = 0; STAT.spreadSum = 0; STAT.spreadN = 0; STAT.errs = 0; }
+  if (!keepStats) {
+    HISTORY = [];
+    STAT.games = 0; STAT.moves = 0; STAT.best = 0; STAT.bestTile = 0; STAT.fb = 0;
+    STAT.win2048 = 0; STAT.merges = 0; STAT.emptySum = 0; STAT.latN = 0;
+    STAT.mergeHit = 0; STAT.mergeTot = 0; STAT.crowdHit = 0; STAT.crowdTot = 0;
+    STAT.cmpHit = 0; STAT.cmpTot = 0;
+    STAT.latSum = 0; STAT.confSum = 0; STAT.spreadSum = 0; STAT.spreadN = 0; STAT.errs = 0;
+  }
   freshIdx = -1;
+  hideGoal();
   renderBoard(); renderStats(); renderHistory();
   $('errBox').style.display = 'none';
 }
 
 /* ======================== 导出 ======================== */
 function jsonl(){
-  return HISTORY.map(h => JSON.stringify({
-    step: h.i, applied: h.applied, model_choice: h.modelChoice, model_p: h.modelP,
-    logit_spread: h.spread,
-    fallback: h.fallback, moved: h.moved, gained: h.gained,
-    spawn: h.spawn, score_before: h.scoreBefore, score_after: h.score,
-    probs: h.probs, ranking: h.ranking,
-    truth: { merge_available: h.truthMerge, crowding_level: h.truthCrowd },
-    model: { merge_available: h.modelMerge, merge_p: h.mergeP, crowding_argmax: h.modelCrowd },
-    tokens: h.tokens, latency_ms: h.latencyMs, temperature: h.temperature,
-    board_before: h.before, board_after: h.after, ts: h.ts
-  })).join('\n');
+  return HISTORY.map(h => {
+    const bd = h.rule.byDir;
+    const rule = {};
+    for (const d of DIRS){
+      const it = bd[d];
+      rule[d] = it && it.legal
+        ? { value: Math.round(it.value), rel: +it.rel.toFixed(4), merges: it.merges,
+            empties_after: it.emptiesAfter, dead_risk: +it.deadRisk.toFixed(4) }
+        : { legal: false };
+    }
+    return JSON.stringify({
+      step: h.i, source: h.source,
+      applied: h.applied, fallback: h.fallback, moved: h.moved,
+      gained: h.gained, merges: h.merges, spawn: h.spawn,
+      score_before: h.scoreBefore, score_after: h.score,
+      rule: { choice: h.rule.choice, depth: h.rule.depth, prefer: h.rule.prefer,
+              survive_all: h.rule.surviveAll, by_dir: rule, rule_ms: h.ruleMs },
+      model: h.modelChoice == null ? null
+           : { choice: h.modelChoice, p: h.modelP, probs: h.probs, logit_spread: h.spread,
+               agree_with_rule: h.modelChoice === h.rule.choice,
+               truth: { merge_available: h.truthMerge, crowding_level: h.truthCrowd },
+               answered: { merge_available: h.modelMerge, crowding_argmax: h.modelCrowd } },
+      tokens: h.tokens, latency_ms: h.latencyMs, temperature: h.temperature,
+      board_before: h.before, board_after: h.after, ts: h.ts
+    });
+  }).join('\n');
 }
 function copyText(t){
   const done = () => { const b = $('copyBtn'); b.textContent = '已复制'; setTimeout(() => b.textContent = '复制', 1200); };
@@ -777,6 +1107,7 @@ async function boot(){
   $('seed').onchange = () => { stopLoop(); newGame(false); };
   $('clrBtn').onclick = () => { HISTORY = []; freshIdx = -1; renderHistory(); };
   $('showAll').onchange = renderHistory;
+  $('strategy').onchange = () => { hideGoal(); };
   $('expBtn').onclick = () => {
     if (!HISTORY.length) return;
     const blob = new Blob([jsonl()], { type: 'application/x-ndjson' });
@@ -788,7 +1119,7 @@ async function boot(){
   };
   $('copyBtn').onclick = () => copyText(HISTORY.length ? jsonl() : '（暂无决策历史）');
   document.addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
     if (e.code === 'Space'){ e.preventDefault(); if (running) stopLoop(); else runLoop(); }
     if ((e.key === 's' || e.key === 'S') && !running) doStep();
     if (e.key === 'r' || e.key === 'R'){ stopLoop(); newGame(false); }
@@ -796,14 +1127,14 @@ async function boot(){
 
   const base = await probeApi();
   if (base === null){
-    $('badges').innerHTML = '<span class="badge"><span class="dot bad"></span>后端未连接</span>';
+    $('badges').innerHTML = '<span class="badge"><span class="dot warn"></span>后端未连接 · 规则策略仍可用</span>';
     const b = $('banner');
-    b.className = 'banner bad';
-    $('bannerText').innerHTML = `<b>未探测到 <code>127.0.0.1:8771</code> 的 Laya 决策服务。</b><br>
-      在本文件同目录（<code>Downloads/jev</code>）执行：<br>
-      <code>python laya_verify.py --port 8771</code><br>
-      启动后刷新本页即可。页面已就绪，只等后端。`;
-    $('runBtn').disabled = true; $('stepBtn').disabled = true;
+    b.className = 'banner';
+    $('bannerText').innerHTML = `<b>未探测到 <code>127.0.0.1:8771</code> 的 Laya 决策服务。</b>
+      当前默认的<b>规则策略（期望搜索）在本机运行、不依赖后端</b>，可直接开始对局；
+      「混合」「模型」两种策略与留痕对照需要后端。启动方式（在本文件同目录执行，然后刷新本页）：<br>
+      <code>python laya_verify.py --port 8771</code>`;
+    disableModelOptions();
     return;
   }
   try {
@@ -814,23 +1145,26 @@ async function boot(){
       <span class="badge">权重 <b>${esc(m.path)}</b></span>
       <span class="badge">${(m.params / 1e6).toFixed(1)}M params · ${m.layers}层 + ${m.head_layers}层决策头</span>
       <span class="badge">tokenizer <b>${esc(t.mode)}</b></span>
-      <span class="badge"><span class="dot ${t.faithful ? 'ok' : 'warn'}"></span>${t.faithful ? '真实词表' : '词表缺失 → 语义 BLOCKED'}</span>`;
+      <span class="badge"><span class="dot ${t.faithful ? 'ok' : 'warn'}"></span>${t.faithful ? '官方 256k 词表' : '词表缺失'}</span>`;
     const b = $('banner');
+    const chan = `<b>但「词表到位 ≠ 决策通道对齐」</b>：本页统计里的「平均 logit 极差」是通道增益的实测读数 ——
+      实测仅 <b>5e-3</b>（字面可判定任务上应 ≫1e-2）。因此在模型通道对齐前，<b>默认已切到规则策略</b>，
+      模型只作为留痕对照（「规则·模型一致」应接近 4 方向随机基线 25%）。`;
     if (t.faithful){
-      b.className = 'banner ok';
-      $('bannerText').innerHTML = `<b>官方词表已加载（${esc(t.mode)}，vocab=${t.vocab}）。</b>
-        但<b>词表到位 ≠ 决策通道对齐</b>：本页统计里的<b>「平均 logit 极差」</b>就是通道增益的实测读数 ——
-        若它只有 ~1e-3 而非 ≫1e-2，说明模型在四个方向上的分化仍接近随机。
-        因此本页验证的是<b>「决策链路闭环 + 抉择全程留痕」</b>；概率排序是否具备实际含义，
-        以该读数为准，或看后端 <code>/api/verify</code> 的「决策通道自检（平凡探针）」一节。`;
+      b.className = 'banner';
+      $('bannerText').innerHTML = `<b>官方词表已加载（${esc(t.mode)}，vocab=${t.vocab}）。</b>${chan}`;
     } else {
       b.className = 'banner';
-      $('bannerText').innerHTML = `<b>词表为字节级兜底（vocab=${t.vocab}，非官方 256k）→ 模型看不到语义。</b><br>
-        实测四方向 logits 差异仅 ~1e-2，softmax 后接近 <b>均匀随机（各 ≈25%）</b>，noul ≈ 0.50。
-        因此本页验证的是<b>「决策链路闭环 + 抉择全程留痕」</b>，不是棋力 —— 模型会随机走来走去并很快堵死，这是预期结果，不是 bug。<br>
-        把官方 <code>tokenizer.json</code> 放到权重同目录并重启后端，即自动切为真实语义决策。`;
+      $('bannerText').innerHTML = `<b>词表为字节级兜底（vocab=${t.vocab}，非官方 256k）→ 模型看不到语义，概率排序无实际含义。</b>${chan}`;
     }
   }catch(e){ /* status 失败不阻塞对局 */ }
+}
+function disableModelOptions(){
+  const sel = $('strategy');
+  for (const o of sel.options) if (o.value !== 'rule') o.disabled = true;
+  sel.value = 'rule';
+  $('callModel').checked = false;
+  $('callModel').disabled = true;
 }
 boot();
 </script>
