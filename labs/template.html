@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{{TITLE}}</title>
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --panel2:#fafbfc; --line:#e4e7ec; --line2:#eef1f4;
+  --text:#1d2430; --muted:#667085; --dim:#98a2b3;
+  --accent:#2f6fed; --accent-weak:#eaf1fe;
+  --ok:#0d9488; --ok-weak:#e6f6f3;
+  --warn:#c2740a; --warn-weak:#fdf3e3;
+  --bad:#d64545; --bad-weak:#fdecec;
+  --info:#5b6b7c; --info-weak:#eef1f4;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --radius:10px; --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1460px;margin:0 auto;padding:20px 22px 56px}
+
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:14px}
+h1{font-size:19px;font-weight:650;margin:0;letter-spacing:.2px}
+h1 span{color:var(--muted);font-weight:400;font-size:13px;margin-left:8px}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
+  background:var(--panel);border:1px solid var(--line);font-size:12px;color:var(--muted);
+  font-family:var(--mono);white-space:nowrap}
+.badge b{color:var(--text);font-weight:600}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--dim);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+
+.banner{border:1px solid #f0d9ad;background:var(--warn-weak);border-radius:var(--radius);
+  padding:11px 14px;margin-bottom:14px;font-size:13px;color:#7a4a05;display:flex;gap:10px}
+.banner .ic{font-size:15px;line-height:1.4;flex:none}
+.banner b{color:#6b3f03}
+.banner code{font-family:var(--mono);background:#fff8ec;border:1px solid #f0d9ad;border-radius:4px;padding:1px 5px;font-size:12px}
+.banner.ok{border-color:#bfe3dd;background:var(--ok-weak);color:#0b5c53}
+.banner.ok b{color:#07443d}
+.banner.bad{border-color:#f5cdcd;background:var(--bad-weak);color:#9b2c2c}
+.banner.bad b{color:#8a1f1f}
+.banner.hidden{display:none}
+
+.grid{display:grid;grid-template-columns:minmax(380px,520px) minmax(460px,1fr);gap:16px;align-items:start}
+@media(max-width:1080px){.grid{grid-template-columns:1fr}}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card>.hd{display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--line2);
+  font-size:13px;font-weight:600}
+.card>.hd .sub{font-weight:400;color:var(--muted);font-size:12px;font-family:var(--mono)}
+.card>.hd .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+.card>.bd{padding:12px 13px}
+
+label.lb{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+input[type=text],input[type=number],select{width:100%;background:var(--panel2);color:var(--text);
+  border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px;font-family:inherit;outline:none}
+input:focus,select:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px var(--accent-weak)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+input[type=checkbox]{accent-color:var(--accent)}
+button{font-family:inherit;font-size:13px;border-radius:7px;border:1px solid var(--line);
+  background:var(--panel);color:var(--text);padding:7px 12px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--dim);background:var(--panel2)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{background:#2560d8;border-color:#2560d8}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.mini{padding:3px 8px;font-size:12px}
+button.ghost{background:transparent;border-color:transparent;color:var(--muted);padding:3px 7px;font-size:12px}
+button.ghost:hover{background:var(--info-weak);color:var(--text)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>*{min-width:0}
+.grow{flex:1}
+.hint{font-size:12px;color:var(--dim);margin-top:6px;line-height:1.5}
+.hint code{font-family:var(--mono);background:var(--info-weak);border-radius:4px;padding:1px 4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.full{grid-column:1/-1}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.st{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+.st .n{font-family:var(--mono);font-size:17px;font-weight:680;line-height:1.25}
+.st .t{font-size:11px;color:var(--muted)}
+.st .sm{font-size:10.5px;color:var(--dim);font-family:var(--mono)}
+.st.ok .n{color:var(--ok)} .st.bad .n{color:var(--bad)} .st.warn .n{color:var(--warn)}
+
+#stage{min-height:120px}
+.tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11.5px;
+  font-family:var(--mono);background:var(--info-weak);color:var(--info);border:1px solid var(--line)}
+.tag.ok{background:var(--ok-weak);color:#0b6a60;border-color:#c9e7e1}
+.tag.warn{background:var(--warn-weak);color:#8a5306;border-color:#f0dcb8}
+.tag.bad{background:var(--bad-weak);color:#9b2c2c;border-color:#f3cfcf}
+
+.pbar{display:flex;align-items:center;gap:7px;margin:2px 0}
+.pbar .k{font-family:var(--mono);font-size:11.5px;width:76px;flex:none;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.pbar .t{flex:1;height:11px;background:var(--info-weak);border-radius:4px;overflow:hidden}
+.pbar .t i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.pbar .v{font-family:var(--mono);font-size:11.5px;width:52px;text-align:right;color:var(--text)}
+.pbar.pick .t i{background:var(--ok)}
+.pbar.pick .k{color:var(--text);font-weight:600}
+.pbar.bad .t i{background:var(--bad)}
+
+.rank{display:flex;align-items:center;gap:7px;padding:2px 0;font-family:var(--mono);font-size:12px}
+.rank .k{width:74px;flex:none;color:var(--muted)}
+.rank .v{flex:1}
+.rank .s{width:96px;text-align:right;color:var(--text)}
+.rank.pick{font-weight:650}
+.rank.pick .k{color:var(--text)}
+.rank.risky .s{color:var(--bad)}
+
+pre{margin:6px 0 0;background:var(--panel2);border:1px solid var(--line2);border-radius:7px;
+  padding:9px 11px;font-family:var(--mono);font-size:11.5px;line-height:1.55;
+  white-space:pre-wrap;word-break:break-all;max-height:320px;overflow:auto;color:#3a4453}
+details>summary{cursor:pointer;font-size:12.5px;color:var(--muted);margin-top:8px}
+details>summary:hover{color:var(--text)}
+
+.hist{max-height:430px;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.hitem{border:1px solid var(--line2);border-radius:8px;padding:8px 10px;background:var(--panel2)}
+.hitem.fresh{border-color:var(--accent);background:var(--accent-weak)}
+.hrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}
+.hrow .idx{font-family:var(--mono);color:var(--dim);font-size:11px}
+.hrow .act{font-family:var(--mono);font-weight:650}
+.hrow .sep{color:var(--line)}
+.mono{font-family:var(--mono)}
+.muted{color:var(--muted)}
+.dim{color:var(--dim)}
+.err{display:none;border:1px solid #f3cfcf;background:var(--bad-weak);color:#9b2c2c;
+  border-radius:var(--radius);padding:9px 12px;font-size:12.5px;margin-bottom:12px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>{{NAME}}<span>{{SUB}}</span></h1>
+    <div class="badges">
+      <span class="badge"><i class="dot" id="apiDot"></i>API <b id="apiTag">探测中</b></span>
+      <span class="badge">策略 <b id="stratTag">rule</b></span>
+      <span class="badge">步 <b id="stepTag">0</b></span>
+      <span class="badge">模型延迟 <b id="latTag">—</b></span>
+      <span class="badge">目标 <b id="goalTag">—</b></span>
+    </div>
+  </header>
+
+  <div class="banner hidden" id="banner"></div>
+  <div class="err" id="errBox"></div>
+
+  <div class="grid">
+    <div class="col">
+      <div class="card">
+        <div class="hd">控制<span class="sub" id="sceneTag">{{ID}}</span>
+          <span class="right"><span class="tag" id="runTag">idle</span></span>
+        </div>
+        <div class="bd">
+          <div class="row" style="margin-bottom:10px">
+            <button class="primary" id="runBtn">自动运行</button>
+            <button id="stepBtn">单步</button>
+            <button id="resetBtn">重置</button>
+          </div>
+          <div class="grid2">
+            <div>
+              <label class="lb">决策策略</label>
+              <select id="strategy">
+                <option value="rule" selected>rule · 算法主判</option>
+                <option value="mix">mix · 算法筛候选 + 模型破平</option>
+                <option value="model">model · Laya 直接判决</option>
+              </select>
+            </div>
+            <div>
+              <label class="lb">每步间隔 (ms)</label>
+              <input type="number" id="delay" value="120" min="0" step="20" />
+            </div>
+          </div>
+          <div class="grid2" style="margin-top:9px">
+            <div>
+              <label class="lb">choice 温度</label>
+              <input type="number" id="temp" value="3" min="0.2" step="0.5" />
+            </div>
+            <div>
+              <label class="lb">随机种子</label>
+              <input type="number" id="seed" value="1" min="1" step="1" />
+            </div>
+          </div>
+          <div id="sceneCtl" class="grid2" style="margin-top:9px"></div>
+          <label class="row" style="margin-top:9px;font-size:12.5px;color:var(--muted)">
+            <input type="checkbox" id="callModel" /> rule 模式下也调用模型（仅留痕对照）
+          </label>
+          <div class="hint">{{HINT}}</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd">场景<span class="sub">{{GOAL}}</span></div>
+        <div class="bd"><div id="stage"></div></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card">
+        <div class="hd">对局指标</div>
+        <div class="bd"><div class="stats" id="metrics"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="hd">决策通道<span class="sub">Laya vs 算法基准</span></div>
+        <div class="bd"><div class="stats" id="chan"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="hd">批量验证<span class="sub">rule / mix / model 各跑 N 局</span>
+          <span class="right">
+            <input type="number" id="batchN" value="8" min="1" step="4"
+                   style="width:66px;padding:3px 6px;font-size:12px" />
+            <button class="mini" id="batchBtn">跑批量</button>
+          </span>
+        </div>
+        <div class="bd" id="batchOut"><div class="dim">点「跑批量」在三种策略下各跑 N 局，对比目标达成率</div></div>
+      </div>
+
+      <div class="card">
+        <div class="hd">最近一步<span class="sub">算法分解 / 模型概率 / 一致与否</span></div>
+        <div class="bd" id="trace"><div class="dim">尚无决策</div></div>
+      </div>
+
+      <div class="card">
+        <div class="hd">最近一次请求 / 响应<span class="sub">POST /api/predict</span></div>
+        <div class="bd" id="last"><div class="dim">尚无请求</div></div>
+      </div>
+
+      <div class="card">
+        <div class="hd">决策历史<span class="right"><button class="ghost" id="copyBtn">导出 JSONL</button>
+          <button class="ghost" id="clearBtn">清空</button></span></div>
+        <div class="bd"><div class="hist" id="hist"><div class="dim">尚无记录</div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+{{CORE}}
+</script>
+<script>
+{{SCENE}}
+</script>
+<script>
+Lab.boot();
+</script>
+</body>
+</html>
