@@ -71,7 +71,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_MODEL = os.path.join(HERE, "model.safetensors")
 
 # =============================================================================
-# 0. 推断配置（权重文件无 config.json，以下为反推默认值；均可在 UI 覆盖）
+# 0. 推断配置（下列为最初权重里没有 config.json 时反推的默认值；
+#    同目录一旦存在官方 config.json / rl_agent_config.json，会由
+#    apply_official_config() 自动覆盖 —— 见下方 0.1。均可在 UI/API 覆盖）
 # =============================================================================
 
 DEFAULT_CFG: Dict[str, Any] = {
@@ -97,6 +99,136 @@ DEFAULT_CFG: Dict[str, Any] = {
 
 N_LAYERS_DEFAULT = 22
 HARD_MAX_LEN = 8192   # 选项段完整性的硬上限（超出才截断 state）
+
+# -----------------------------------------------------------------------------
+# 0.1 官方 config.json / rl_agent_config.json 自动对齐
+# -----------------------------------------------------------------------------
+# 上面这些默认值原本是"权重目录里没有 config.json"时**反推**出来的。一旦官方文件
+# 到位就必须以文件为准 —— 否则会出现"文件就在手边、脚本却仍在用猜的值"这种最难
+# 排查的偏差（rope_theta 10000 vs 官方 160000 就是这么漏掉的）。
+OFFICIAL: Dict[str, Any] = {}
+CFG_ALIGN: List[Dict[str, Any]] = []
+
+
+def _read_json(path: str) -> Dict[str, Any]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _cfg_dirs(model_path: str = "") -> List[str]:
+    out: List[str] = []
+    env = os.environ.get("LAYA_CONFIG_DIR")
+    if env:
+        out.append(env)
+    if model_path:
+        out.append(model_path if os.path.isdir(model_path) else os.path.dirname(model_path))
+    out.append(HERE)
+    seen, uniq = set(), []
+    for d in out:
+        if d and d not in seen:
+            seen.add(d)
+            uniq.append(d)
+    return uniq
+
+
+def apply_official_config(model_path: str = "") -> None:
+    """把官方配置读进 DEFAULT_CFG，并记录"声明了但实现未建模"的字段。"""
+    global HARD_MAX_LEN
+    OFFICIAL.clear()
+    CFG_ALIGN.clear()
+    for d in _cfg_dirs(model_path):
+        for name in ("config.json", "rl_agent_config.json"):
+            if name in OFFICIAL:
+                continue
+            p = os.path.join(d, name)
+            if os.path.isfile(p):
+                OFFICIAL[name] = _read_json(p)
+
+    def note(item, old, new, src, kind="applied"):
+        CFG_ALIGN.append({"item": item, "old": old, "new": new,
+                          "source": src, "kind": kind})
+
+    # ---- config.json：基座编码器的 stock 配置（ModernBertForMaskedLM） ----
+    c = OFFICIAL.get("config.json") or {}
+    if c:
+        def take(src_key, cfg_key, conv):
+            if src_key not in c:
+                return
+            old, new = DEFAULT_CFG.get(cfg_key), conv(c[src_key])
+            DEFAULT_CFG[cfg_key] = new
+            note(f"config.json:{src_key} → {cfg_key}", old, new, "config.json")
+
+        take("hidden_size", "hidden", int)
+        take("num_hidden_layers", "n_layers", int)
+        take("num_attention_heads", "n_heads", int)
+        take("intermediate_size", "inter", int)
+        take("vocab_size", "vocab", int)
+        take("layer_norm_eps", "norm_eps", float)
+
+        # RoPE：优先 rope_parameters[<mode>].rope_theta，兼容顶层 rope_theta
+        rp = c.get("rope_parameters") or {}
+        theta = None
+        for key in ("full_attention", "sliding_attention"):
+            if isinstance(rp.get(key), dict) and rp[key].get("rope_theta") is not None:
+                theta = rp[key]["rope_theta"]
+                break
+        if theta is None:
+            theta = c.get("rope_theta")
+        if theta is not None:
+            note("config.json:rope_theta → rope_theta", DEFAULT_CFG["rope_theta"],
+                 float(theta), "config.json")
+            DEFAULT_CFG["rope_theta"] = float(theta)
+
+        # attention 调度：layer_types 是逐层声明，比"每 3 层 1 层"的口诀可靠
+        lt = c.get("layer_types") or []
+        if lt:
+            n_full = sum(1 for t in lt if t == "full_attention")
+            mode = "global" if n_full == len(lt) else "alternating3"
+            note(f"config.json:layer_types（{len(lt)} 层，full {n_full}）→ attention",
+                 DEFAULT_CFG["attention"], mode, "config.json")
+            DEFAULT_CFG["attention"] = mode
+        elif c.get("global_attn_every_n_layers"):
+            note("config.json:global_attn_every_n_layers → attention",
+                 DEFAULT_CFG["attention"], "alternating3", "config.json")
+            DEFAULT_CFG["attention"] = "alternating3"
+        if c.get("local_attention"):
+            r = int(c["local_attention"]) // 2     # 滑窗 128 的半径语义
+            note("config.json:local_attention/2 → local_radius",
+                 DEFAULT_CFG["local_radius"], r, "config.json")
+            DEFAULT_CFG["local_radius"] = r
+        if c.get("max_position_embeddings"):
+            HARD_MAX_LEN = int(c["max_position_embeddings"])
+
+    # ---- rl_agent_config.json：真正的 agent 侧配置 ----
+    a = OFFICIAL.get("rl_agent_config.json") or {}
+    if a:
+        if a.get("max_len") is not None:
+            old, new = DEFAULT_CFG["max_len"], int(a["max_len"])
+            DEFAULT_CFG["max_len"] = new
+            note("rl_agent_config:max_len → max_len", old, new, "rl_agent_config.json")
+        if a.get("head_max_len") is not None:
+            old, new = DEFAULT_CFG["head_max_len"], int(a["head_max_len"])
+            DEFAULT_CFG["head_max_len"] = new
+            note("rl_agent_config:head_max_len → head_max_len", old, new,
+                 "rl_agent_config.json")
+        if a.get("temperature") is not None:
+            DEFAULT_CFG["temperature_manual"] = [float(t) for t in a["temperature"]]
+        if a.get("head_layers") is not None:
+            note("rl_agent_config:head_layers", None, a["head_layers"],
+                 "rl_agent_config.json", kind="info")
+        # 官方声明但**实现里没有对应概念** → 必须显式暴露，否则被静默忽略
+        for k in ("max_prefixes", "act_costs", "cost_wrong_act", "amp_dtype",
+                  "temperature_by_options"):
+            if k in a:
+                note(f"rl_agent_config:{k}", None, a[k],
+                     "rl_agent_config.json", kind="unmodeled")
+
+
+apply_official_config()
 
 # =============================================================================
 # 1. safetensors 读取（mmap + 按需转 fp32）
@@ -346,6 +478,12 @@ class ByteFallbackTokenizer(BaseTokenizer):
 class HFJsonTokenizer(BaseTokenizer):
     """纯 Python 读取 HF `tokenizer.json`（BPE / Unigram / WordPiece）。"""
 
+    _space_mode = "bytelevel"      # bytelevel（GPT-2 'Ġ'）| metaspace（SentencePiece '▁'）
+    _prepend_scheme = "always"
+    _sp = "Ġ"
+    _byte_fallback = False
+    _unk = 3
+
     def __init__(self, path: str):
         with open(path, "r", encoding="utf-8") as f:
             self.spec = json.load(f)
@@ -395,7 +533,8 @@ class HFJsonTokenizer(BaseTokenizer):
             self._space_mode, repl = "bytelevel", "Ġ"   # 无声明 → 保持历史行为
         self._sp = repl
         self._byte_fallback = bool(self.spec.get("model", {}).get("byte_fallback"))
-        self._unk = self._added.get("<unk>", 3)
+        self._unk = (self._added.get("<unk>")
+                     or (getattr(self, "_tok2id", {}) or {}).get("<unk>", 3))
 
     # -- model init ---------------------------------------------------------
     def _init_model(self, m: Dict[str, Any]) -> None:
@@ -457,10 +596,24 @@ class HFJsonTokenizer(BaseTokenizer):
 
     # -- BPE ---------------------------------------------------------------
     def _bpe_word(self, word: str) -> List[str]:
+        """对单个 pre-token 做 BPE，返回 **token 字符串**列表（由调用方转 id）。
+
+        metaspace 模式直接在原文字符上合并；bytelevel 模式先做 byte2uni 映射。
+        """
         if word in self._cache:
             return self._cache[word]
-        b2u = _gpt2_byte2uni()
-        syms = [b2u[b] for b in word.encode("utf-8")]
+        if self._space_mode == "metaspace":
+            syms: List[str] = []
+            for ch in word:
+                if ch in self._tok2id:
+                    syms.append(ch)
+                elif self._byte_fallback:
+                    syms.extend(f"<0x{b:02X}>" for b in ch.encode("utf-8"))
+                else:
+                    syms.append("<unk>")
+        else:
+            b2u = _gpt2_byte2uni()
+            syms = [b2u[b] for b in word.encode("utf-8")]
         if len(syms) > 1:
             while True:
                 best, bi = None, None
@@ -471,29 +624,46 @@ class HFJsonTokenizer(BaseTokenizer):
                 if bi is None:
                     break
                 syms = syms[:bi] + [syms[bi] + syms[bi + 1]] + syms[bi + 2:]
-        out = [s for s in syms if s in self._tok2id]
-        if len(out) != len(syms):  # 有未登录符号 → 退回逐字节
-            out = [s for s in syms if s in self._tok2id]
+        out: List[str] = []
+        for s in syms:
+            if s in self._tok2id:
+                out.append(s)
+            elif self._space_mode == "metaspace" and self._byte_fallback:
+                out.extend(f"<0x{b:02X}>" for b in s.encode("utf-8"))
+            else:
+                out.append("<unk>")
         self._cache[word] = out
         return out
 
     def _enc_bpe(self, text: str) -> List[int]:
         ids: List[int] = []
+        pieces = [text]
         # added tokens 优先整段匹配
         if self._added:
             pat = "(" + "|".join(re.escape(k) for k in
                                  sorted(self._added, key=len, reverse=True)) + ")"
-            for piece in re.split(pat, text):
+            pieces = re.split(pat, text)
+        if self._space_mode == "metaspace":
+            # normalizer: ' ' → '▁' ；Metaspace(prepend_scheme) 在最前补一个 '▁'
+            for piece in pieces:
                 if piece in self._added:
                     ids.append(self._added[piece])
-                else:
-                    for w in _WORD_RX.findall(piece):
-                        for s in self._bpe_word(w):
-                            ids.append(self._tok2id[s])
-        else:
-            for w in _WORD_RX.findall(text):
+                    continue
+                norm = piece.replace(" ", self._sp)
+                if norm and self._prepend_scheme != "never" and not norm.startswith(self._sp):
+                    norm = self._sp + norm
+                for w in norm.split(self._sp):
+                    if w:
+                        for s in self._bpe_word(self._sp + w):
+                            ids.append(self._tok2id.get(s, self._unk))
+            return ids
+        for piece in pieces:
+            if piece in self._added:
+                ids.append(self._added[piece])
+                continue
+            for w in _WORD_RX.findall(piece):
                 for s in self._bpe_word(w):
-                    ids.append(self._tok2id[s])
+                    ids.append(self._tok2id.get(s, self._unk))
         return ids
 
     # -- Unigram（SentencePiece 风格 Viterbi） ------------------------------
@@ -579,6 +749,20 @@ class HFJsonTokenizer(BaseTokenizer):
             return s
         for i in ids:
             toks.append(self._id2tok.get(i, ""))
+        if self._space_mode == "metaspace":
+            # 按声明的 decoder 链还原: Replace('▁'→' ') → ByteFallback → Fuse
+            out = bytearray()
+            for t in toks:
+                if t in self._added:
+                    out += t.encode("utf-8")
+                elif len(t) == 6 and t.startswith("<0x") and t.endswith(">"):
+                    try:
+                        out.append(int(t[3:5], 16))
+                    except ValueError:
+                        out += t.replace(self._sp, " ").encode("utf-8")
+                else:
+                    out += t.replace(self._sp, " ").encode("utf-8")
+            return out.decode("utf-8", errors="replace")
         b2u = _gpt2_byte2uni()
         u2b = {v: k for k, v in b2u.items()}
         out = bytearray()
@@ -1034,6 +1218,10 @@ class Predictor:
                                 for i in np.argsort(-p)],
                     "temperature": round(t, 6),
                     "logits": {k: round(float(v), 4) for k, v in zip(keys, lg)},
+                    # 选项间的 logit 极差 —— 通道增益的直接读数。字面可判定任务上
+                    # 若只有 1e-3 量级，说明 head 几乎没读到 marker 的上下文。
+                    "logit_spread": round(float(lg.max() - lg.min()), 6),
+                    "logit_absmean": round(float(np.abs(lg).mean()), 6),
                 }
             elif q.type == "score":
                 idx = np.arange(n, dtype=np.float64)
@@ -1227,6 +1415,23 @@ class Verifier:
             "checkpoint")
 
         # ---------- B. 架构符合性 ----------
+        if CFG_ALIGN:
+            applied = [c for c in CFG_ALIGN if c["kind"] in ("applied", "info")]
+            unmod = [c for c in CFG_ALIGN if c["kind"] == "unmodeled"]
+            lines = [f"· {c['item']}: {c['old']} → {c['new']}" for c in applied]
+            if unmod:
+                lines.append("· 官方声明但**实现未建模**（这些才是真正的不确定项，"
+                             "任何『准确度』结论都必须先排除它们）："
+                             + "，".join(f"{c['item']}={c['new']}" for c in unmod))
+            add("官方配置文件对齐", "WARN" if unmod else "PASS",
+                f"已读取 {len(OFFICIAL)} 个文件: {', '.join(sorted(OFFICIAL))}\n"
+                + "\n".join(lines), "official")
+        else:
+            add("官方配置文件对齐", "BLOCKED",
+                "权重目录内没有 config.json / rl_agent_config.json，"
+                "架构参数全部为反推值 —— 见 assumptions，"
+                "此时任何数值偏差都无法区分『实现错』与『配置猜错』", "official")
+
         for name, claim, evidence in CARD_CLAIMS:
             add(f"架构声明 · {name}", "PASS", f"{claim}　｜ 证据: {evidence}", "architecture")
 
@@ -1237,20 +1442,22 @@ class Verifier:
         add("前向无 NaN/Inf", "PASS" if not (h["has_nan"] or h["has_inf"]) else "FAIL",
             f"hidden_absmax={h['hidden_absmax']:.2f}, marker_absmax={h['marker_absmax']:.2f}", "forward")
 
-        # 概率归一
-        allok, worst = True, 0.0
+        # 概率归一（注意：answer 里的概率是 round(.,6) 后的值，求和偏差上界 = n × 5e-7，
+        # 用固定 1e-6 会让 11 选项的题**必然**FAIL —— 那是判据的错，不是实现的错）
+        allok, worst, wtol = True, 0.0, 0.0
         for a in r1["answers"].values():
             ps = a.get("probs")
             if isinstance(ps, dict):
-                s = sum(ps.values())
+                s, n = sum(ps.values()), len(ps)
             elif isinstance(ps, list):
-                s = sum(ps)
+                s, n = sum(ps), len(ps)
             else:
-                s = a.get("noul", 0) + a.get("p_no", 0)
-            worst = max(worst, abs(s - 1.0))
-            allok &= abs(s - 1.0) < 1e-6
+                s, n = a.get("noul", 0) + a.get("p_no", 0), 2
+            tol = n * 5e-7 + 1e-9
+            worst, wtol = max(worst, abs(s - 1.0)), max(wtol, tol)
+            allok &= abs(s - 1.0) <= tol
         add("分布归一 (Σp = 1)", "PASS" if allok else "FAIL",
-            f"最大偏差 {worst:.2e}", "forward")
+            f"最大偏差 {worst:.2e}（round(.,6) 后的理论上界 {wtol:.2e}）", "forward")
 
         # marker 数 = 选项数
         n_opt = sum(len(q.get("criteria") or []) if q.get("criteria") else 2
@@ -1285,8 +1492,20 @@ class Verifier:
             p = np.array(list(r["answers"]["department"]["probs"].values()))
             ents.append(float(-(p * np.log(p + 1e-12)).sum()))
         mono = ents[0] <= ents[1] <= ents[2]
-        add("温度单调性（T↑ → 分布更平）", "PASS" if mono else "FAIL",
-            f"T=0.5/1/4 熵 = " + " / ".join(f"{e:.4f}" for e in ents), "invariants")
+        d_ent = ents[2] - ents[0]
+        if d_ent < 1e-4:
+            # 三档熵几乎相同（≈ ln 选项数）→ 温度对"几乎全等的 logits"无从生效。
+            # 这种"数值上通过"的真空 PASS 正是最该避免的，故判 WARN 并写明增量为 0 量级。
+            add("温度单调性（T↑ → 分布更平）", "WARN",
+                f"T=0.5/1/4 熵 = " + " / ".join(f"{e:.6f}" for e in ents)
+                + f"，总增量仅 {d_ent:.2e}（≈ ln 选项数而非单调上升）→ 该问题下 logits "
+                  f"几乎全等、温度无从生效，**本不变量近乎不可判定，不能算通过**",
+                "invariants")
+        else:
+            add("温度单调性（T↑ → 分布更平）",
+                "PASS" if (mono and d_ent > 0) else "FAIL",
+                f"T=0.5/1/4 熵 = " + " / ".join(f"{e:.6f}" for e in ents)
+                + f"（总增量 {d_ent:.2e}；要求严格递增 → 熵上升即分布变平）", "invariants")
         self.pred.cfg["temperature_mode"], self.pred.cfg["temperature_manual"] = old
 
         # 注意力模式等价性（双向检验：短序列必须完全一致；长序列必须有差异 → 证明掩膜不是空操作）
@@ -1319,9 +1538,11 @@ class Verifier:
             f"A 最小输入 {t_s} tokens（≤ 半径+1={radius+1}）→ hidden 差 {dh_s:.2e}、"
             f"logit 差 {dl_s:.2e}（要求严格为 0）；"
             f"B 长输入 {t_l} tokens → hidden 差 {dh_l:.2e}、logit 差 {dl_l:.2e}（要求 >0）。"
-            f"结论：{radius+1} tokens 以内 alternating3 与 global 严格等价 —— "
-            f"因此 attention 调度这一未知项在短输入下不影响结果，"
-            f"超出后才会分叉（需按官方 config 才能定论）。", "invariants")
+                f"结论：{radius+1} tokens 以内 alternating3 与 global 严格等价 —— "
+                f"该未知项在短输入下不影响结果，超出后才分叉。"
+                f"（官方 config.json 已到位：layer_types 为 22 层中 8 层 full_attention，"
+                f"即每 3 层 1 层 full、其余 sliding_attention(local_attention=128)，"
+                f"与交替调度的默认值逐层一致）", "invariants")
 
         # ---------- E. 延迟基准 ----------
         bench = self.benchmark()
@@ -1335,11 +1556,34 @@ class Verifier:
             f"{self.tok.mode}（vocab={self.tok.vocab_size}）。{self.tok.note}", "tokenizer")
         if isinstance(self.tok, HFJsonTokenizer):
             probe_txt = "Duplicate charge on invoice #4411, refund today."
-            rt = self.tok.decode(self.tok.encode(probe_txt))
-            add("tokenizer 往返（encode→decode）", "PASS" if rt == probe_txt else "WARN",
-                f"原: {probe_txt!r}\n往返: {rt!r}", "tokenizer")
+            ids_p = self.tok.encode(probe_txt)
+            rt = self.tok.decode(ids_p)
+            # Metaspace(prepend_scheme=always) 解码会多一个前导空格 —— 官方行为，不算失败
+            ok_rt = (rt == probe_txt) or (rt.lstrip(" ") == probe_txt)
+            sp_n = sum(1 for i in ids_p if self.tok._sp in self.tok._id2tok.get(i, ""))
+            single = sum(1 for i in ids_p if len(self.tok._id2tok.get(i, "")) == 1)
+            spm = "▁" if self.tok._space_mode == "metaspace" else "Ġ"
+            ratio = single / max(1, len(ids_p))
+            if len(ids_p) and sp_n == 0:
+                diag = (f"⚠ 含 {spm} 的 token 为 0 → 空格约定用错（把 ▁ 当成了 Ġ），"
+                        f"每个词首都被拆成噪声")
+            elif ratio > 0.5:
+                diag = f"⚠ 单字符 token 占 {ratio:.0%} → 词形基本未保留，prompt 接近噪声"
+            else:
+                diag = f"词形正常保留（单字符仅占 {ratio:.0%}）"
+            add("tokenizer 往返（encode→decode）", "PASS" if ok_rt else "WARN",
+                f"原: {probe_txt!r}\n往返: {rt!r}\n"
+                f"{len(ids_p)} tokens；含空格标记 {spm} 的 {sp_n} 个；"
+                f"单字符 token {single} 个 → {diag}\n"
+                f"前 24 个: {[self.tok._id2tok.get(i, '') for i in ids_p][:24]}",
+                "tokenizer")
+
+        # ---------- F2. 决策通道自检（平凡可判定探针） ----------
+        ch = self.channel_probe()
+        add("决策通道自检（平凡探针）", ch["status"], ch["detail"], "channel")
 
         # ---------- G. 语义验证（模型卡示例） ----------
+        ok_n = tot_n = 0
         notes = []
         for p in PRESETS:
             if not p["expect"]:
@@ -1353,26 +1597,134 @@ class Verifier:
             for k, exp in p["expect"].items():
                 g = got.get(k)
                 if isinstance(exp, str):
-                    hit.append(f"{k}: {'OK' if g == exp else 'MISS'}(期望 {exp} / 得到 {g})")
+                    tot_n += 1
+                    ok = (g == exp)
+                    ok_n += int(ok)
+                    hit.append(f"{k}: {'OK' if ok else 'MISS'}(期望 {exp} / 得到 {g})")
+                elif isinstance(g, (int, float)):
+                    tot_n += 1
+                    ok = abs(float(g) - float(exp)) < 0.25
+                    ok_n += int(ok)
+                    hit.append(f"{k}: {'OK' if ok else 'MISS'}"
+                               f"(期望≈{exp} / 得到 {g}，容差 0.25)")
                 else:
                     hit.append(f"{k}: 期望≈{exp} / 得到 {g}")
             notes.append(f"· {p['name']} → " + "; ".join(hit))
-        add("模型卡示例语义对比", "BLOCKED",
-            "语义精度不可判定（无官方 tokenizer）。以下为**结构有效、语义无效**的输出，"
-            "仅用于确认管线连通：\n" + "\n".join(notes), "semantic")
+
+        if not self.tok.faithful:
+            sem_status = "BLOCKED"
+            sem_head = ("语义精度不可判定 —— 当前为字节兜底词表（token→语义映射错误）。"
+                        "以下输出结构有效、语义无效，仅用于确认管线连通：")
+        elif not ch["aligned"]:
+            sem_status = "BLOCKED"
+            sem_head = (f"决策通道自检未通过（探针 {ch['hits']}/{ch['n']}，"
+                        f"logit 极差 {ch['max_logit_spread']:.2e}）→ 前向读出链路未对齐。"
+                        "词表与架构参数均已对齐，故本项判 BLOCKED 而非 FAIL："
+                        "**此时任何『准确率』读数都不可解释**（不是模型差，是通道增益不足）。")
+        else:
+            sem_status = "PASS" if (ok_n == tot_n and tot_n) else "WARN"
+            sem_head = (f"词表保真 + 通道自检 {ch['hits']}/{ch['n']} 通过；"
+                        f"模型卡示例命中 {ok_n}/{tot_n}（数值项容差 0.25）。")
+        add("模型卡示例语义对比", sem_status,
+            sem_head + "\n" + "\n".join(notes), "semantic")
 
         passed = sum(1 for c in checks if c["status"] == "PASS")
         blocked = sum(1 for c in checks if c["status"] == "BLOCKED")
         failed = sum(1 for c in checks if c["status"] == "FAIL")
+        if not self.tok.faithful:
+            sem_v = "语义精度：BLOCKED —— 缺官方词表 tokenizer（当前为字节兜底）"
+        elif not ch["aligned"]:
+            sem_v = (f"语义精度：BLOCKED —— 词表与官方架构参数均已对齐"
+                     f"（{self.tok.mode}；{len(OFFICIAL)} 个官方配置文件已应用），"
+                     f"但平凡可判定探针只命中 {ch['hits']}/{ch['n']}、"
+                     f"选项间 logit 极差仅 {ch['max_logit_spread']:.2e}，"
+                     f"说明 prompt 模板 / type_emb 注入位置 / head 读出位置仍未对齐。"
+                     f"此结论与「官方词表让准确度下降」无关 —— 是通道从始至终就没通；"
+                     f"换词表只是把『不可判定』变成了『可判定且不达标』")
+        elif ok_n == tot_n and tot_n:
+            sem_v = (f"语义精度：通过（模型卡示例 {ok_n}/{tot_n}，"
+                     f"通道自检 {ch['hits']}/{ch['n']}）")
+        else:
+            sem_v = (f"语义精度：部分可达（模型卡示例 {ok_n}/{tot_n}，"
+                     f"通道自检 {ch['hits']}/{ch['n']}）—— 通道已通但精度未达模型卡")
         return {
             "checks": checks,
             "summary": {"total": len(checks), "pass": passed, "blocked": blocked,
                         "fail": failed, "warn": sum(1 for c in checks if c["status"] == "WARN"),
                         "info": sum(1 for c in checks if c["status"] == "INFO")},
-            "verdict": ("权重与架构：已完整验证（前向可执行、张量无遗漏）；"
-                        "语义精度：BLOCKED —— 缺官方 256k 词表 tokenizer"),
+            "verdict": ("权重与架构：已完整验证（前向可执行、张量无遗漏）；" + sem_v),
             "assumptions": ASSUMPTIONS,
         }
+
+    # 平凡可判定探针：答案**字面写在 state 里**，与推理无关，通道对齐则必然全对。
+    # 三个探针的真值分别置于选项第 1/2/3 位 → 任何"恒定选某项"的位置偏置最多命中 1 个，
+    # 因此 3/3 不可能来自偏置；0/3 则是"通道未对齐"的确定判据。
+    CHANNEL_PROBE: Dict[str, Any] = {
+        "state": ("Policy record. Each line is verbatim. Do not infer or compute anything.\n"
+                  "the colour of the item is blue\n"
+                  "the shape of the item is square\n"
+                  "the count of the items is seven\n"
+                  "no other answer in this list is correct"),
+        "questions": [
+            {"id": "probe_colour", "type": "choice",
+             "instructions": "Which colour is stated in the record?",
+             "criteria": {"blue": "the colour of the item is blue",
+                          "red": "the colour of the item is red",
+                          "green": "the colour of the item is green"},
+             "truth": "blue"},
+            {"id": "probe_shape", "type": "choice",
+             "instructions": "Which shape is stated in the record?",
+             "criteria": {"round": "the shape of the item is round",
+                          "square": "the shape of the item is square",
+                          "triangle": "the shape of the item is triangle"},
+             "truth": "square"},
+            {"id": "probe_count", "type": "choice",
+             "instructions": "Which count is stated in the record?",
+             "criteria": {"three": "the count of the items is three",
+                          "five": "the count of the items is five",
+                          "seven": "the count of the items is seven"},
+             "truth": "seven"},
+        ],
+    }
+
+    def channel_probe(self) -> Dict[str, Any]:
+        p = self.CHANNEL_PROBE
+        qs = [Question(q["id"], q["type"], q["instructions"], q["criteria"])
+              for q in p["questions"]]
+        r = self.pred.predict(p["state"], qs)
+        rows, hits = [], 0
+        spreads, maxps = [], []
+        for i, q in enumerate(p["questions"]):
+            a = r["answers"][q["id"]]
+            got = a.get("choice")
+            probs = a.get("probs") or {}
+            conf = probs.get(got)
+            sp = a.get("logit_spread")
+            spreads.append(sp if sp is not None else 0.0)
+            maxps.append(max(probs.values()) if probs else 0.0)
+            ok = (got == q["truth"])
+            hits += int(ok)
+            rows.append(f"  {'OK  ' if ok else 'MISS'} {q['id']}: "
+                        f"真值 {q['truth']}（选项第 {i+1} 位）/ 得到 {got}"
+                        f"（p={conf}，logit 极差 {sp}）")
+        n = len(p["questions"])
+        inj = max(spreads) if spreads else 0.0      # 通道增益：字面任务上应 ≫1e-2
+        # 判据：真值分散在第 1/2/3 位 → 3/3 不可能是位置偏置；少一个就说明通道不可信。
+        # 单看命中数会被 ~1/3 概率的巧合骗过，所以并列看 logit 增益。
+        aligned = (hits == n) and (inj > 1e-2)
+        status = "PASS" if aligned else ("FAIL" if hits <= 1 else "WARN")
+        detail = (f"平凡探针 {hits}/{n} 命中；选项平均最大概率 {np.mean(maxps):.3f}"
+                  f"（理想 →1.0；≈1/选项数 表示模型「没形成意见」）；"
+                  f"选项间 logit 极差最大 {inj:.3e}（字面可判定任务上应 ≫1e-2）。\n"
+                  f"探针把答案字面写进 state，真值分散在选项第 1/2/3 位 —— 因此"
+                  f"命中 {n}/{n} 不可能是位置偏置；反之只要漏掉一个，就说明"
+                  f"prompt 模板 / type_emb 注入位置 / head 读出位置至少一处未对齐，"
+                  f"此时模型卡准确率与对局胜率都不可解释。\n"
+                  + "\n".join(rows))
+        return {"status": status, "hits": hits, "n": n, "detail": detail,
+                "aligned": aligned, "max_logit_spread": inj,
+                "mean_max_prob": round(float(np.mean(maxps)), 6) if maxps else 0.0}
+
 
     def benchmark(self) -> Dict[str, Any]:
         base = PRESETS[0]
@@ -1397,12 +1749,12 @@ ASSUMPTIONS = [
      "why": "type_emb[3,768] 语义为 question primitive；marker 是决策读出点。"},
     {"item": "act_head 的 4 个标量特征", "value": "type one-hot(3) + log1p(n_options)/log64",
      "why": "输入维 772 = 768 + 4，具体 4 维未在权重中体现。"},
-    {"item": "RoPE", "value": f"theta={DEFAULT_CFG['rope_theta']}，half-split 旋转，无 position_embeddings",
-     "why": "张量中不存在 position_embeddings，故必为旋转式位置编码。"},
+    {"item": "RoPE", "value": f"theta={DEFAULT_CFG['rope_theta']:.0f}（=官方 config.json 值），half-split 旋转，无 position_embeddings",
+     "why": "张量中不存在 position_embeddings，故必为旋转式位置编码；theta 取自同目录 config.json。"},
     {"item": "head 激活", "value": "gelu（可切换 relu / tanh-gelu）",
      "why": "nn.TransformerEncoderLayer 默认 relu，相邻现代实现多用 gelu。"},
-    {"item": "attention", "value": "全局长注意力（可切换 alternating3 + 半径 64）",
-     "why": "ModernBERT 系列用 每3层1层global + sliding window 128；序列短于半径时两者等价（已自测）。"},
+    {"item": "attention", "value": "每 3 层 1 层 global + 其余 sliding（半径 64，= 官方 local_attention/2）",
+     "why": "取自同目录 config.json 的 layer_types；序列短于半径时两模式严格等价（已自测），超出后才分叉。"},
     {"item": "norm eps / 层归一化", "value": "encoder 1e-5 无 bias；head 1e-5 有 bias",
      "why": "encoder 各 norm 只有 weight；head 各 norm 带 bias。"},
     {"item": "primitive → 温度索引", "value": "choice=0, score=1, noul=2",
@@ -1475,6 +1827,7 @@ class Handler(BaseHTTPRequestHandler):
                               "faithful": tok.faithful, "note": tok.note,
                               "special_ids": tok.specials},
                 "config": pred.cfg,
+                "official": {"files": sorted(OFFICIAL), "align": CFG_ALIGN},
                 "presets": PRESETS,
                 "assumptions": ASSUMPTIONS,
                 "cache_bytes": st.cache_bytes,
@@ -1542,10 +1895,18 @@ def build(model_path: str) -> Tuple[SafeTensors, BaseTokenizer, Predictor]:
     if not os.path.isfile(model_path):
         raise SystemExit(f"找不到权重文件: {model_path}\n用 --model 指定路径。")
     t0 = time.perf_counter()
+    apply_official_config(model_path)      # 官方 config.json 优先于反推默认值
     st = SafeTensors(model_path)
     tok = load_tokenizer(model_path)
     pred = Predictor(st, tok, DEFAULT_CFG)
     lay = time.perf_counter() - t0
+    if OFFICIAL:
+        print(f"[laya] 官方配置: {', '.join(sorted(OFFICIAL))} → 已对齐 "
+              f"{sum(1 for c in CFG_ALIGN if c['kind'] == 'applied')} 项，"
+              f"未建模 {sum(1 for c in CFG_ALIGN if c['kind'] == 'unmodeled')} 项",
+              file=sys.stderr)
+    else:
+        print("[laya] 官方配置: 未找到 config.json → 架构参数全部为反推值", file=sys.stderr)
     print(f"[laya] 权重 {os.path.basename(model_path)}  "
           f"{len(st.header)} tensors / {st.params()/1e6:.1f}M params / "
           f"{st.file_bytes/1e6:.0f} MB　加载 {lay*1000:.1f} ms", file=sys.stderr)

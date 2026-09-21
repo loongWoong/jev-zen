@@ -238,6 +238,7 @@ summary:hover{color:var(--text)}
             <div class="st"><div class="n" id="sMerge">—</div><div class="t">merge 判断命中</div><div class="sm" id="sMergeSub">vs 真值</div></div>
             <div class="st"><div class="n" id="sCrowd">—</div><div class="t">crowding 命中</div><div class="sm" id="sCrowdSub">vs 真值</div></div>
             <div class="st"><div class="n" id="sConf">—</div><div class="t">平均 max p</div><div class="sm">均匀基线 25%</div></div>
+            <div class="st"><div class="n" id="sSpread">—</div><div class="t">平均 logit 极差</div><div class="sm" id="sSpreadSub">通道增益，应 ≫0.01</div></div>
           </div>
           <div class="hint">「回退率」= 模型给出无效方向（棋盘不变）被改为次优合法方向的占比。「命中」= 模型作答与棋盘真值一致的比例，用来量化决策通道质量。</div>
         </div>
@@ -468,7 +469,8 @@ let HISTORY = [];
 let LAST = null;
 let running = false, busy = false, gen = 0, freshIdx = -1;
 const STAT = { games: 0, moves: 0, best: 0, bestTile: 0, fb: 0, valid: 0,
-               mergeHit: 0, mergeTot: 0, crowdHit: 0, crowdTot: 0, latSum: 0, confSum: 0, errs: 0 };
+               mergeHit: 0, mergeTot: 0, crowdHit: 0, crowdTot: 0, latSum: 0, confSum: 0,
+               spreadSum: 0, spreadN: 0, errs: 0 };
 
 function tileStyle(v){
   const t = TILE[v] || ['#3c3a32', '#ffffff'];
@@ -524,6 +526,11 @@ function renderStats(){
   $('sCrowd').textContent = STAT.crowdTot ? pct1(STAT.crowdHit / STAT.crowdTot) : '—';
   $('sCrowdSub').textContent = `${STAT.crowdHit} / ${STAT.crowdTot}`;
   $('sConf').textContent = STAT.moves ? pct1(STAT.confSum / STAT.moves) : '—';
+  const sp = STAT.spreadN ? STAT.spreadSum / STAT.spreadN : null;
+  $('sSpread').textContent = sp === null ? '—' : sp.toExponential(1);
+  $('sSpreadSub').textContent = sp === null ? '通道增益，应 ≫0.01'
+    : (sp > 1e-2 ? '通道有增益' : '增益 ≈0 → 概率排序无实际含义');
+  $('sSpreadSub').style.color = (sp !== null && sp <= 1e-2) ? 'var(--warn)' : '';
 }
 function entryHTML(h){
   const probs = DIRS.map(d => {
@@ -612,6 +619,9 @@ async function decide(){
   const modelP = a.move.confidence;
   const probs = a.move.probs || {};
   const ranking = a.move.ranking || DIRS.map(d => ({ key: d, p: probs[d] || 0 }));
+  // 通道增益读数：四个方向 logits 的极差。字面可判定任务上应 ≫1e-2；
+  // 若只有 ~1e-3，说明决策头几乎没读到上下文，概率排序不具实际含义。
+  const spread = (typeof a.move.logit_spread === 'number') ? a.move.logit_spread : null;
 
   let applied = modelChoice, fallback = false;
   if (!valid.includes(modelChoice)){
@@ -633,6 +643,7 @@ async function decide(){
   if (fallback) STAT.fb++;
   STAT.latSum += r.meta.latency_ms;
   STAT.confSum += modelP;
+  if (spread !== null) { STAT.spreadSum += spread; STAT.spreadN++; }
   STAT.mergeTot++; if (modelMerge === truthMerge) STAT.mergeHit++;
   STAT.crowdTot++; if (modelCrowd === truthCrowd) STAT.crowdHit++;
   STAT.best = Math.max(STAT.best, G.score);
@@ -641,7 +652,7 @@ async function decide(){
   const h = {
     i: HISTORY.length + 1,
     before, after,
-    modelChoice, modelP, probs, ranking,
+    modelChoice, modelP, probs, ranking, spread,
     applied, fallback, moved: mv.moved, gained: mv.gained, spawn: mv.spawn,
     scoreBefore, score: G.score,
     truthMerge, modelMerge, mergeP: a.merge_available?.noul ?? 0,
@@ -719,7 +730,7 @@ function newGame(keepStats){
   G = createGame(N, $('seed').value || '2048');
   if (!keepStats) { HISTORY = []; STAT.games = 0; STAT.moves = 0; STAT.best = 0; STAT.bestTile = 0;
     STAT.fb = 0; STAT.mergeHit = 0; STAT.mergeTot = 0; STAT.crowdHit = 0; STAT.crowdTot = 0;
-    STAT.latSum = 0; STAT.confSum = 0; STAT.errs = 0; }
+    STAT.latSum = 0; STAT.confSum = 0; STAT.spreadSum = 0; STAT.spreadN = 0; STAT.errs = 0; }
   freshIdx = -1;
   renderBoard(); renderStats(); renderHistory();
   $('errBox').style.display = 'none';
@@ -729,6 +740,7 @@ function newGame(keepStats){
 function jsonl(){
   return HISTORY.map(h => JSON.stringify({
     step: h.i, applied: h.applied, model_choice: h.modelChoice, model_p: h.modelP,
+    logit_spread: h.spread,
     fallback: h.fallback, moved: h.moved, gained: h.gained,
     spawn: h.spawn, score_before: h.scoreBefore, score_after: h.score,
     probs: h.probs, ranking: h.ranking,
@@ -806,7 +818,11 @@ async function boot(){
     const b = $('banner');
     if (t.faithful){
       b.className = 'banner ok';
-      $('bannerText').innerHTML = '<b>官方词表已加载。</b>模型看到的是真实语义，四方向的概率排序具备实际含义，本页的抉择留痕即真实决策链路。';
+      $('bannerText').innerHTML = `<b>官方词表已加载（${esc(t.mode)}，vocab=${t.vocab}）。</b>
+        但<b>词表到位 ≠ 决策通道对齐</b>：本页统计里的<b>「平均 logit 极差」</b>就是通道增益的实测读数 ——
+        若它只有 ~1e-3 而非 ≫1e-2，说明模型在四个方向上的分化仍接近随机。
+        因此本页验证的是<b>「决策链路闭环 + 抉择全程留痕」</b>；概率排序是否具备实际含义，
+        以该读数为准，或看后端 <code>/api/verify</code> 的「决策通道自检（平凡探针）」一节。`;
     } else {
       b.className = 'banner';
       $('bannerText').innerHTML = `<b>词表为字节级兜底（vocab=${t.vocab}，非官方 256k）→ 模型看不到语义。</b><br>

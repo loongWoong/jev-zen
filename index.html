@@ -224,7 +224,7 @@ td.dt{color:var(--muted);font-family:var(--mono);font-size:11.5px;white-space:pr
           <div class="q grid2" style="background:transparent;border:none;padding:0;margin-bottom:10px">
             <div><label class="lb">max_len（context）</label><input type="number" id="cfgMaxLen" min="32" max="8192" step="16"></div>
             <div><label class="lb">attention 调度</label>
-              <select id="cfgAttention"><option value="global">global（默认）</option><option value="alternating3">alternating3（每3层1层global + 窗128）</option></select>
+              <select id="cfgAttention"><option value="alternating3">alternating3（官方 config 默认：每3层1层global + 窗128）</option><option value="global">global（全局长注意力）</option></select>
             </div>
             <div><label class="lb">mlp gate 拆分</label>
               <select id="cfgGate"><option value="first">first（前1152=gate）</option><option value="interleaved">interleaved（奇偶交错）</option></select>
@@ -269,7 +269,7 @@ td.dt{color:var(--muted);font-family:var(--mono);font-size:11.5px;white-space:pr
         </div>
         <div class="pane on" id="p-verify">
           <div class="row" style="margin-bottom:11px">
-            <button id="verifyBtn" class="grow">运行验证（27 项，约 25 秒）</button>
+            <button id="verifyBtn" class="grow">运行验证（全部检查，约 25 秒）</button>
           </div>
           <div id="verifyOut"><div class="empty">后端已内置权重完整性、前向数值健康、确定性与不变量、延迟基准、词表保真度等检查。<br>点上方按钮执行。</div></div>
         </div>
@@ -477,7 +477,19 @@ function renderLedger(s){
     <span class="k">special ids</span><span class="v">${esc(JSON.stringify(t.special_ids))}</span>
     <span class="k">cache</span><span class="v">${(s.cache_bytes/1e6).toFixed(0)} MB（fp32 绑定量）</span>
     <span class="k">runtime</span><span class="v">Python ${esc(s.python)} · numpy ${esc(s.numpy)} · 无 torch</span>
+    <span class="k">官方配置</span><span class="v">${
+      (s.official && s.official.files.length)
+        ? esc(s.official.files.join(' · ')) + '　已对齐 '
+          + s.official.align.filter(c=>c.kind==='applied').length + ' 项'
+          + (s.official.align.filter(c=>c.kind==='unmodeled').length
+             ? `　<span style="color:var(--warn)">未建模 ${s.official.align.filter(c=>c.kind==='unmodeled').length} 项</span>`
+             : '')
+        : '未找到 config.json → 架构参数全部为反推值'}</span>
   </div>
+  ${(s.official && s.official.align.length) ? `<details><summary>官方配置对齐明细（config.json / rl_agent_config.json）</summary>
+    <table><thead><tr><th>类别</th><th>项</th><th>原值 → 新值</th></tr></thead><tbody>${
+      s.official.align.map(c=>`<tr><td class="grp">${esc(c.kind)}</td><td class="nm">${esc(c.item)}</td><td class="dt">${esc(String(c.old))} → ${esc(String(c.new))}</td></tr>`).join('')
+    }</tbody></table></details>` : ''}
   <details><summary>当前运行参数</summary><pre class="light">${esc(JSON.stringify(s.config,null,2))}</pre></details>`;
 }
 function renderReport(rep){
@@ -588,8 +600,10 @@ async function runVerify(){
   try{
     const j = await call('/api/verify', {});
     renderReport(j.report);
+    // 检查项数是后端动态决定的，不写死 —— 与"不要把随状态变化的值硬编码"同一原则
+    if (j.report && j.report.summary) btn.dataset.n = j.report.summary.total;
   }catch(e){ $('verifyOut').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
-  finally{ btn.disabled = false; btn.textContent = '重新运行验证（27 项）'; }
+  finally{ btn.disabled = false; btn.textContent = `重新运行验证（${btn.dataset.n || '全部'} 项）`; }
 }
 
 async function runBench(){
