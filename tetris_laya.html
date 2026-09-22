@@ -457,7 +457,7 @@ const Lab = {
         lat: d.raw && d.raw.meta ? d.raw.meta.latency_ms : null,
         tokens: d.raw && d.raw.meta ? d.raw.meta.tokens : null,
         info: res.info || '',
-        metrics: SCENE.metrics ? SCENE.metrics(s) : [],
+        metrics: SCENE.metrics ? SCENE.metrics(s, this.sopt) : [],
         ts: Date.now()
       };
       this.hist.push(h);
@@ -556,7 +556,7 @@ const Lab = {
       if (SCENE.goalOk && SCENE.goalOk(s, this.sopt)) { acc.goal = true; break; }
     }
     if (!acc.goal && SCENE.goalOk && SCENE.goalOk(s, this.sopt)) acc.goal = true;
-    const m = SCENE.metrics ? SCENE.metrics(s) : [];
+    const m = SCENE.metrics ? SCENE.metrics(s, this.sopt) : [];
     const sc = m.find(x => /分|score/i.test(x.k));
     acc.score = sc ? (typeof sc.v === 'number' ? sc.v : 0) : 0;
     return acc;
