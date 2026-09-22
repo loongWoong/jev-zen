@@ -45,7 +45,7 @@
 - **一次前向回答全部问题**：`meta.forward_passes = 1`。加问题不加前向次数，只加序列长度 —— 这决定了 2048 页那类高频调用怎么设计才划算。
 - **typed questions**：`choice`（多选一）/ `score`（有序档位，返回期望值）/ `noul`（概率），三种 primitive 各有独立温度下标。
 - **诚实的验证报告**：良构性检查与语义检查分离；判不出结论时输出 `BLOCKED` 并写明"为什么判不出"，而不是给一个看起来通过的 PASS。
-- **两个前端**：验证台（`index.html`，由后端直接服务）与 2048 自动对局页（`2048_laya.html`，含规则策略、抉择历史留痕与 JSONL 导出）。
+- **门户 + 两个前端**：`portal/portal.html` 是 17 个页面的导航门户（截图 / 名称 / 简介 / 直达链接）；验证台（`index.html`，由后端直接服务）与 2048 自动对局页（`2048_laya.html`，含规则策略、抉择历史留痕与 JSONL 导出）是其中两个核心页面。
 - **可复现**：2048 页使用 mulberry32 + FNV-1a 播种，同一 seed 棋盘序列完全一致。
 
 ## 架构
@@ -234,6 +234,16 @@ merge 判断命中 / crowding 命中 / 平均 max p / 平均 logit 极差。
 | `merge_available` | `noul` | 能否合并探针（与真值比对） |
 
 模型给出**非法方向**时回退到规则判决，并在留痕上标 `fallback: true`。
+
+## 全场景门户（portal/）
+
+`portal/portal.html` 是仓库全部 17 个网页的**导航门户**：以响应式卡片网格展示每个页面的截图、名称、
+一句话简介与算法标签，卡片可一键直达对应 HTML。截图由 `portal/shoot.js` 用 Playwright 驱动系统 Edge
+无头渲染（视口 1280×820）离线生成，存于 `portal/screenshots/`，无需启动后端即可浏览。
+
+- **覆盖**：验证台 `index.html` + 2048 主场景 + 15 个 `labs` 决策实验场景（贪吃蛇 / 俄罗斯方块 / 扫雷 / …）。
+- **用途**：初次查看仓库时先打开门户，凭缩略图与标签快速定位想看的场景或算法。
+- **重生成截图**：`node portal/shoot.js`（需本机已安装 `playwright-core` 且存在系统 Edge 可执行文件）。
 
 ## 决策实验场景矩阵
 
@@ -444,6 +454,10 @@ jev/
 │   ├── template.html       #   页面骨架与样式
 │   ├── build.py            #   底座 + 场景 → 自包含单文件页面
 │   └── scenes/             #   15 个场景模块（贪吃蛇 / 俄罗斯方块 / 扫雷 / …）
+├── portal/                 # 全场景门户（导航画廊）
+│   ├── portal.html         #   导航门户：截图 / 名称 / 简介 / 直达链接，响应式卡片网格
+│   ├── shoot.js            #   无头截图脚本（Playwright + 系统 Edge，1280×820）
+│   └── screenshots/        #   17 张页面 PNG（离线生成，无需后端）
 ├── snake_laya.html         # 以下 15 个均为构建产物：自包含，双击即开
 ├── tetris_laya.html
 ├── minesweeper_laya.html
