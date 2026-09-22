@@ -508,17 +508,21 @@ class CudaLayaModel(L.LayaModel):
         return x
 
     def _head_layer(self, x, w: Dict[str, Any]):
+        # pre-norm —— 与 laya_verify.py 的 _head_layer 保持一致（原因见那里）。
+        # 原来的 post-norm 会让最后一步 LayerNorm 的 bias 主导输出，把 marker
+        # 隐状态压成同一个向量，读出对选项不敏感。
+        eps = self.cfg["norm_eps"]
         T = x.shape[0]
-        qkv = self._gemm(x, w["in_w"]) + w["in_b"]
+        h = self._ln(x, w["n1_w"], w["n1_b"], eps)
+        qkv = self._gemm(h, w["in_w"]) + w["in_b"]
         q, k, v = cp.split(qkv, 3, axis=-1)
         r = lambda t: t.reshape(T, self.nh, self.dh).transpose(1, 0, 2).copy()  # noqa: E731
         ctx = self._attend(r(q), r(k), r(v), None)
         ctx = ctx.transpose(1, 0, 2).reshape(T, self.H)
-        x = self._ln(x + self._gemm(ctx, w["out_w"]) + w["out_b"],
-                     w["n1_w"], w["n1_b"], 1e-5)
-        f = self._act(self._gemm(x, w["l1_w"]) + w["l1_b"], self.cfg["head_act"])
-        return self._ln(x + self._gemm(f, w["l2_w"]) + w["l2_b"],
-                        w["n2_w"], w["n2_b"], 1e-5)
+        x = x + self._gemm(ctx, w["out_w"]) + w["out_b"]
+        h = self._ln(x, w["n2_w"], w["n2_b"], eps)
+        f = self._act(self._gemm(h, w["l1_w"]) + w["l1_b"], self.cfg["head_act"])
+        return x + self._gemm(f, w["l2_w"]) + w["l2_b"]
 
     def _scorer(self, markers):
         h = markers
@@ -641,17 +645,19 @@ class CudaLayaModel(L.LayaModel):
         return self._ln(x2, w, b, eps).reshape(orig)
 
     def _head_layer_b(self, x, w: Dict[str, Any], B: int, T: int):
-        qkv = self._gemm(x, w["in_w"]) + w["in_b"]
+        # pre-norm —— 与 _head_layer 一致。
+        eps = self.cfg["norm_eps"]
+        h = self._ln_any(x, w["n1_w"], w["n1_b"], eps)
+        qkv = self._gemm(h, w["in_w"]) + w["in_b"]
         q, k, v = cp.split(qkv, 3, axis=-1)
         r = lambda t: cp.ascontiguousarray(  # noqa: E731
             t.reshape(B, T, self.nh, self.dh).transpose(0, 2, 1, 3))
         ctx = self._attend(r(q), r(k), r(v), None)
         ctx = ctx.transpose(0, 2, 1, 3).reshape(B, T, self.H)
-        x = self._ln_any(x + self._gemm(ctx, w["out_w"]) + w["out_b"],
-                         w["n1_w"], w["n1_b"], 1e-5)
-        f = self._act(self._gemm(x, w["l1_w"]) + w["l1_b"], self.cfg["head_act"])
-        return self._ln_any(x + self._gemm(f, w["l2_w"]) + w["l2_b"],
-                            w["n2_w"], w["n2_b"], 1e-5)
+        x = x + self._gemm(ctx, w["out_w"]) + w["out_b"]
+        h = self._ln_any(x, w["n2_w"], w["n2_b"], eps)
+        f = self._act(self._gemm(h, w["l1_w"]) + w["l1_b"], self.cfg["head_act"])
+        return x + self._gemm(f, w["l2_w"]) + w["l2_b"]
 
     def _forward_batch(self, ids_b: Any, pad_mask: Any, mp_flat: Any,
                        mt_flat: Any, feats_b: Any, marker_slices: List[Tuple[int, int]]):

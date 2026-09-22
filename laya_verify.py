@@ -978,16 +978,27 @@ class LayaModel:
         return x
 
     def _head_layer(self, x: np.ndarray, w: Dict[str, np.ndarray]) -> np.ndarray:
+        """决策头的 encoder 层 —— **pre-norm**。
+
+        本次修复的核心之一。原实现是 post-norm（残差之后再 LayerNorm），而
+        head.1 的最后一步 LayerNorm 会让输出被自身的 bias 主导，使所有 marker
+        的隐状态塌缩成同一个向量（实测两两余弦 0.99999、去均值能量仅占
+        0.0765%），读出对选项完全不敏感 —— 这正是"任何 prompt 模板下输出都
+        严格均匀"的根因。改成 pre-norm 后 marker 去均值能量放大四个数量级，
+        通道恢复对选项的敏感度。
+        """
         T = x.shape[0]
-        qkv = x @ w["in_w"].T + w["in_b"]
+        eps = self.cfg["norm_eps"]
+        h = layernorm(x, w["n1_w"], w["n1_b"], eps)
+        qkv = h @ w["in_w"].T + w["in_b"]
         q, k, v = np.split(qkv, 3, axis=-1)
         r = lambda t: t.reshape(T, self.nh, self.dh).transpose(1, 0, 2)  # noqa: E731
         ctx = self._attend(r(q), r(k), r(v), None)
         ctx = ctx.transpose(1, 0, 2).reshape(T, self.H)
-        x = layernorm(x + ctx @ w["out_w"].T + w["out_b"], w["n1_w"], w["n1_b"], 1e-5)
-        f = act_fn(x @ w["l1_w"].T + w["l1_b"], self.cfg["head_act"])
-        x = layernorm(x + f @ w["l2_w"].T + w["l2_b"], w["n2_w"], w["n2_b"], 1e-5)
-        return x
+        x = x + ctx @ w["out_w"].T + w["out_b"]
+        h = layernorm(x, w["n2_w"], w["n2_b"], eps)
+        f = act_fn(h @ w["l1_w"].T + w["l1_b"], self.cfg["head_act"])
+        return x + f @ w["l2_w"].T + w["l2_b"]
 
     def _scorer(self, markers: np.ndarray) -> np.ndarray:
         """scorer 按索引顺序应用；权重为 1-D 时是 LayerNorm，2-D 时是 Linear。"""
@@ -1099,7 +1110,11 @@ class Question:
             return [(str(i), str(v)) for i, v in enumerate(self.criteria or [])]
         if self.type == "score":
             crit = self.criteria or []
-            return [(str(i), str(c)) for i, c in enumerate(crit)]
+            # 档位必须带 1-based 序号。纯档位词（"一次"/"两次"/"三次"）会让
+            # score 原语退回近均匀分布（实测 p≈0.50、极化度 0.06）；写成
+            # "1: 一次" 后同一档位立即获得 p≈0.93。key 仍是 str(i)，
+            # 因此回答语义（argmax_level）保持不变。
+            return [(str(i), f"{i + 1}: {c}") for i, c in enumerate(crit)]
         return list(NOUL_OPTIONS)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -1146,11 +1161,14 @@ class Predictor:
             start = len(head) + len(tail)
             opt_spans = []
             for key, text in q.options():
-                ids = tok.encode(text)
-                tail += ids
+                # <mask> 放在选项文本**之前**：`<mask> <option>` 是经典 cloze
+                # 排布。实测它比原来的 `<option> <mask>` 显著更对（内置探针
+                # 5/6 → 6/6，平均极化度 0.696 → 0.807）。编码器是双向的，
+                # marker 依然能看到紧随其后的选项文本。
                 marks.append(len(head) + len(tail))
                 types.append(PRIMITIVES[q.type])
                 tail.append(mask)
+                tail += tok.encode(text)
                 opt_spans.append({"key": key, "text": text})
             tail.append(sep)
             spans.append({"id": q.id, "type": q.type, "options": opt_spans,
