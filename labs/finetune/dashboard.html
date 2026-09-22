@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:,">
+<title>Laya 决策模型微调框架 · 控制端面板</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e3e6ec; --line2:#eef1f5;
+    --text:#1f2733; --muted:#7a869a; --accent:#2f6fed; --accent-soft:#eaf1fe;
+    --ok:#1f9d57; --ok-soft:#e7f6ee; --warn:#d98a00; --warn-soft:#fdf3e2;
+    --bad:#d64545; --bad-soft:#fdeaea; --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    font-size:14px;line-height:1.55;}
+  .wrap{max-width:1120px;margin:0 auto;padding:22px 20px 60px;}
+  header h1{font-size:21px;margin:0 0 4px;font-weight:650;}
+  header .sub{color:var(--muted);font-size:13px;}
+  .tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;
+    background:var(--accent-soft);color:var(--accent);font-family:var(--mono);}
+  /* backend pill */
+  .be{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-family:var(--mono);
+    padding:2px 9px;border-radius:999px;margin-left:8px;}
+  .be.on{background:var(--ok-soft);color:var(--ok);}
+  .be.off{background:var(--line2);color:var(--muted);}
+  .be i{width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block;}
+  section{margin-top:26px;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:18px 18px 20px;}
+  section>h2{font-size:15px;margin:0 0 14px;display:flex;align-items:center;gap:8px;}
+  section>h2 .n{width:22px;height:22px;border-radius:6px;background:var(--accent-soft);
+    color:var(--accent);font-size:12px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;}
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;}
+  .kpi{border:1px solid var(--line);border-radius:10px;padding:13px 14px;background:var(--panel);}
+  .kpi .v{font-size:23px;font-weight:700;font-family:var(--mono);letter-spacing:-.5px;}
+  .kpi .k{color:var(--muted);font-size:12px;margin-top:2px;}
+  .kpi .sm{font-size:11px;color:var(--muted);margin-top:6px;}
+  /* flow */
+  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;}
+  .fstage{flex:1 1 200px;border:1px solid var(--line);border-radius:10px;padding:13px 14px;
+    background:var(--panel);position:relative;cursor:pointer;transition:.15s;}
+  .fstage:hover{border-color:var(--accent);}
+  .fstage .ph{font-size:11px;color:var(--muted);font-family:var(--mono);}
+  .fstage .nm{font-weight:600;margin:3px 0 8px;font-size:14px;}
+  .fstage .ds{font-size:12px;color:var(--muted);min-height:32px;}
+  .badge{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600;}
+  .b-warn{background:var(--warn-soft);color:var(--warn);}
+  .b-ok{background:var(--ok-soft);color:var(--ok);}
+  .b-bad{background:var(--bad-soft);color:var(--bad);}
+  .b-idle{background:var(--line2);color:var(--muted);}
+  .b-live{background:var(--accent-soft);color:var(--accent);}
+  .arrow{flex:0 0 26px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:18px;}
+  /* status table */
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line2);}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-align:right;}
+  th:first-child,td:first-child{text-align:left;}
+  td.mono,th.mono{font-family:var(--mono);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media(max-width:780px){.grid2{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
+  /* interaction */
+  .ctrls{display:flex;flex-wrap:wrap;gap:18px;}
+  .ctrl{border:1px solid var(--line);border-radius:9px;padding:10px 12px;min-width:170px;}
+  .ctrl .lbl{font-size:11px;color:var(--muted);margin-bottom:6px;}
+  .seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;}
+  .seg button{flex:1;border:0;background:var(--panel);padding:6px 10px;font-size:12.5px;cursor:pointer;color:var(--text);}
+  .seg button.on{background:var(--accent);color:#fff;font-weight:600;}
+  .seg button+button{border-left:1px solid var(--line);}
+  .note{font-size:11.5px;color:var(--muted);margin-top:6px;}
+  .btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:7px;
+    padding:7px 13px;font-size:13px;cursor:pointer;}
+  .btn.ghost{background:var(--panel);color:var(--accent);}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;}
+  .summary{margin-top:12px;border:1px dashed var(--line);border-radius:9px;padding:11px 13px;background:var(--accent-soft);font-size:13px;}
+  /* chart */
+  .chart{width:100%;height:150px;border:1px solid var(--line);border-radius:9px;background:#fff;}
+  .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:8px;}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle;}
+  .filebox{margin-top:10px;font-size:12px;color:var(--muted);}
+  .concl{border-left:3px solid var(--warn);background:var(--warn-soft);padding:11px 14px;border-radius:0 8px 8px 0;font-size:13px;margin-top:14px;}
+  code{font-family:var(--mono);background:var(--line2);padding:1px 5px;border-radius:4px;font-size:12px;}
+  .dim{color:var(--muted);}
+  footer{color:var(--muted);font-size:12px;margin-top:24px;text-align:center;}
+  .pill{font-family:var(--mono);font-size:11px;color:var(--muted);}
+  /* control panel */
+  .cgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media(max-width:780px){.cgrid{grid-template-columns:1fr}}
+  .card{border:1px solid var(--line);border-radius:10px;padding:13px 14px;background:var(--panel);}
+  .card h3{margin:0 0 10px;font-size:13.5px;display:flex;align-items:center;gap:8px;}
+  .card h3 .d{font-size:11px;color:var(--muted);font-weight:400;font-family:var(--mono);}
+  .field{display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap;}
+  .field label{font-size:12px;color:var(--muted);min-width:76px;}
+  select,input[type=text],input[type=number]{border:1px solid var(--line);border-radius:7px;padding:6px 9px;
+    font-size:13px;background:var(--panel);color:var(--text);font-family:var(--mono);}
+  select{min-width:260px;max-width:100%;}
+  input[type=number]{width:78px;}
+  .mon{font-family:var(--mono);font-size:12.5px;}
+  .kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line2);font-size:13px;}
+  .kv:last-child{border-bottom:0;}
+  .kv .k{color:var(--muted);}
+  .kv .v{font-family:var(--mono);text-align:right;}
+  .logbox{margin-top:10px;border:1px solid var(--line);border-radius:9px;background:#0f1420;color:#cfe3ff;
+    font-family:var(--mono);font-size:11.5px;line-height:1.5;padding:10px 12px;height:240px;overflow:auto;white-space:pre-wrap;word-break:break-all;}
+  .stage{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-family:var(--mono);
+    padding:2px 10px;border-radius:999px;background:var(--line2);color:var(--muted);}
+  .stage.run{background:var(--accent-soft);color:var(--accent);}
+  .stage.done{background:var(--ok-soft);color:var(--ok);}
+  .stage.err{background:var(--bad-soft);color:var(--bad);}
+  .stage.stop{background:var(--warn-soft);color:var(--warn);}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:8px;}
+  .spinner{display:inline-block;width:9px;height:9px;border:2px solid var(--accent);border-top-color:transparent;
+    border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:5px;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Laya 决策模型微调框架 · 控制端面板
+      <span class="be off" id="bePill"><i></i><span id="beText">后端未连接</span></span>
+    </h1>
+    <div class="sub">Phase 0 通道对齐为硬门 · 支持模型加载 / 微调 / 运行监控
+      <span class="tag" id="genTag">—</span>
+    </div>
+  </header>
+
+  <!-- KPI -->
+  <div class="kpis" id="kpis"></div>
+
+  <!-- 0. 控制端 -->
+  <section id="sec-control">
+    <h2><span class="n">0</span>控制端 · 模型加载 / 微调 / 运行监控</h2>
+
+    <div class="cgrid">
+      <!-- 模型加载 -->
+      <div class="card">
+        <h3>模型加载 <span class="d">服务端路径</span></h3>
+        <div class="field">
+          <label>选择权重</label>
+          <select id="modelSelect"><option>加载中…</option></select>
+          <button class="btn ghost" id="btnRefreshModels" title="重新扫描">↻</button>
+        </div>
+        <div class="field">
+          <label>手动路径</label>
+          <input type="text" id="modelPath" placeholder="C:/…/model.safetensors" style="min-width:280px;max-width:100%" />
+        </div>
+        <div class="row">
+          <button class="btn" id="btnLoad">加载选中模型</button>
+          <button class="btn ghost" id="btnAlign">重新对齐 (align)</button>
+          <button class="btn ghost" id="btnBench">重新评测 (benchmark)</button>
+        </div>
+        <div id="loadStatus" class="hint">尚未加载模型。</div>
+      </div>
+
+      <!-- 运行监控 -->
+      <div class="card">
+        <h3>运行监控 <span class="d" id="monModel">—</span></h3>
+        <div class="kv"><span class="k">对齐门 (channel_probe)</span><span class="v" id="monChannel"><span class="badge b-idle">—</span></span></div>
+        <div class="kv"><span class="k">最大 logit 极差</span><span class="v" id="monSpread">—</span></div>
+        <div class="kv"><span class="k">平均最大概率</span><span class="v" id="monProb">—</span></div>
+        <div class="kv"><span class="k">延迟 1 问题</span><span class="v" id="monLat1">—</span></div>
+        <div class="kv"><span class="k">延迟 5 问题</span><span class="v" id="monLat5">—</span></div>
+        <div class="kv"><span class="k">标签准确率 top1</span><span class="v" id="monAcc">—</span></div>
+        <div class="kv"><span class="k">上次微调 before→after</span><span class="v" id="monFt">—</span></div>
+      </div>
+    </div>
+
+    <!-- 微调 -->
+    <div class="card" style="margin-top:16px">
+      <h3>微调（head-only · scorer 头训练）<span class="d">convert_maze → finetune_run</span></h3>
+      <div class="field">
+        <label>数据集</label><span class="mon" id="dsInfo">artifacts/maze_dataset.jsonl (148)</span>
+        <label style="margin-left:14px">输出</label><span class="mon" id="outInfo">artifacts/model_maze_ft.safetensors</span>
+      </div>
+      <div class="field">
+        <label>epochs</label><input type="number" id="ftEpochs" value="80" min="1" max="400" />
+        <label style="margin-left:12px">lr</label><input type="number" id="ftLr" value="0.02" step="0.005" min="0.001" max="0.5" />
+        <span class="stage" id="ftStage">idle</span>
+        <button class="btn" id="btnFt">▶ 开始微调</button>
+        <button class="btn ghost" id="btnFtStop">■ 停止</button>
+      </div>
+      <svg class="chart" id="lossChart" viewBox="0 0 1000 150" preserveAspectRatio="none"></svg>
+      <div class="legend"><span><i style="background:var(--accent)"></i>训练 loss（每 5 epoch 采样）</span>
+        <span class="dim">曲线仅在微调运行时更新；训练完成后自动重载模型刷新监控</span></div>
+      <div class="logbox" id="ftLog">等待微调启动…</div>
+      <div class="summary" id="ftSummary">—</div>
+    </div>
+
+    <div class="hint">后端由 <code>control_server.py</code> 提供：<code>python control_server.py --port 8772</code> → 打开
+      <code>http://127.0.0.1:8772/</code>。模型在<b>服务端</b>文件系统，下拉/手动指定路径即可加载；权重不会经浏览器上传。</div>
+  </section>
+
+  <!-- 流程展示 -->
+  <section id="sec-flow">
+    <h2><span class="n">1</span>流程展示</h2>
+    <div class="flow" id="flow"></div>
+    <div class="note">点击任一阶段查看下方对应状态 / 结果。微调前置必须先过 <b>Phase 0 通道对齐</b>。</div>
+  </section>
+
+  <!-- 状态查看 -->
+  <section id="sec-status">
+    <h2><span class="n">2</span>状态查看（Phase-0 静态扫描基线）</h2>
+    <div class="grid2">
+      <div>
+        <h3 class="dim" style="margin:2px 0 8px;font-size:13px">模型事实</h3>
+        <table id="modelFacts"></table>
+      </div>
+      <div>
+        <h3 class="dim" style="margin:2px 0 8px;font-size:13px">通道探针（channel_probe）</h3>
+        <table id="channelFacts"></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 微调交互 -->
+  <section id="sec-interact">
+    <h2><span class="n">3</span>微调交互 · 通道对齐探针（Phase 0 静态）</h2>
+    <div class="ctrls">
+      <div class="ctrl">
+        <div class="lbl">type_emb 注入阶段</div>
+        <div class="seg" id="seg_stage">
+          <button data-v="input" class="on">input</button>
+          <button data-v="pre_head">pre_head</button>
+        </div>
+        <div class="note">pre_head 实测更差（hits 0/3）→ input 更接近真实</div>
+      </div>
+      <div class="ctrl">
+        <div class="lbl">type_emb 注入位点</div>
+        <div class="seg" id="seg_site">
+          <button data-v="markers" class="on">markers</button>
+          <button data-v="all">all</button>
+        </div>
+        <div class="note">markers / all 在本数据上无差异</div>
+      </div>
+      <div class="ctrl">
+        <div class="lbl">primitive→温度 置换</div>
+        <div class="seg" id="seg_temp">
+          <button data-v="perm" class="on">6 置换</button>
+          <button data-v="manual">手动</button>
+        </div>
+        <div class="note">默认温度 [1,1,1]，置换无影响（需真实值）</div>
+      </div>
+      <div class="ctrl">
+        <div class="lbl">head 激活</div>
+        <div class="seg" id="seg_act">
+          <button data-v="gelu" class="on">gelu</button>
+          <button data-v="relu">relu</button>
+          <button data-v="tanh">tanh</button>
+        </div>
+        <div class="note" style="color:var(--bad)">inert：forward 硬编码 gelu，切换无效</div>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn" id="btnBest">在当前筛选下求最佳配置</button>
+      <button class="btn ghost" id="btnAll">显示全部 25 配置</button>
+      <span class="pill" id="filterPill"></span>
+    </div>
+    <div class="summary" id="bestSummary">—</div>
+    <div class="filebox">
+      刷新实测：<input type="file" id="fileIn" accept=".json" />
+      <span class="dim">载入 align.py / benchmark.py 产出的 alignment_report.json 或 benchmark_*.json</span>
+    </div>
+  </section>
+
+  <!-- 评分结果 -->
+  <section id="sec-score">
+    <h2><span class="n">4</span>评分结果（Phase-0 对齐扫描）</h2>
+    <h3 class="dim" style="margin:2px 0 8px;font-size:13px">对齐扫描网格（25 配置 · max_logit_spread）</h3>
+    <svg class="chart" id="barChart" viewBox="0 0 1000 150" preserveAspectRatio="none"></svg>
+    <div class="legend">
+      <span><i style="background:var(--warn)"></i>WARN（input）</span>
+      <span><i style="background:var(--bad)"></i>FAIL（pre_head）</span>
+      <span class="dim">阈值 1e-2：通过需 ≫1e-2，当前全部未达</span>
+    </div>
+    <h3 class="dim" style="margin:18px 0 8px;font-size:13px">配置明细</h3>
+    <table id="gridTable">
+      <thead><tr>
+        <th>#</th><th>阶段</th><th>位点</th><th>状态</th>
+        <th>命中</th><th>logit 极差</th><th>max p</th><th>耗时ms</th>
+      </tr></thead>
+      <tbody id="gridBody"></tbody>
+    </table>
+
+    <h3 class="dim" style="margin:18px 0 8px;font-size:13px">Benchmark（before / 微调前基线）</h3>
+    <table id="benchTable">
+      <thead><tr><th>指标</th><th>before</th><th>after（待训练）</th></tr></thead>
+      <tbody id="benchBody"></tbody>
+    </table>
+    <div class="concl" id="concl"></div>
+  </section>
+
+  <footer>
+    数据快照生成于 <span id="footGen">—</span> · 来源 <code>labs/finetune/artifacts/</code> ·
+    重新生成：<code>python align.py --grid small</code> / <code>python benchmark.py --tag before</code>
+  </footer>
+</div>
+
+<script>
+/* ============ 真实实测数据（来自 artifacts，离线兜底） ============ */
+const MODEL = {
+  params:"321.9M", tensors:170, sizeMB:644, layers:22, hidden:768, heads:12,
+  tokenizer:"tokenizer.json / BPE (faithful=True)",
+  rope:"theta=160000", attn:"alternating3 (每3层1全局+sliding r=64)", norm:"encoder 1e-5 无bias / head 1e-5 有bias"
+};
+const ALIGN = {
+  generated_at:"2026-09-22T15:03:53", grid:"small", n_configs:25, all_aligned:false,
+  best:{tag:"(baseline)",status:"WARN",hits:2,n:3,max_logit_spread:0.005037,mean_max_prob:0.333956},
+  results:[
+    {i:0,stage:"baseline",site:"-",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:1217.4},
+    {i:1,stage:"input",site:"markers",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:735.0},
+    {i:2,stage:"input",site:"markers",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:798.7},
+    {i:3,stage:"input",site:"markers",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:749.9},
+    {i:4,stage:"input",site:"markers",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:467.0},
+    {i:5,stage:"input",site:"markers",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:789.3},
+    {i:6,stage:"input",site:"markers",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:750.0},
+    {i:7,stage:"input",site:"all",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:459.6},
+    {i:8,stage:"input",site:"all",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:784.2},
+    {i:9,stage:"input",site:"all",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:915.1},
+    {i:10,stage:"input",site:"all",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:678.8},
+    {i:11,stage:"input",site:"all",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:642.2},
+    {i:12,stage:"input",site:"all",status:"WARN",hits:2,spread:0.005037,p:0.333956,ms:1103.2},
+    {i:13,stage:"pre_head",site:"markers",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:793.2},
+    {i:14,stage:"pre_head",site:"markers",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:766.4},
+    {i:15,stage:"pre_head",site:"markers",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:626.7},
+    {i:16,stage:"pre_head",site:"markers",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:756.2},
+    {i:17,stage:"pre_head",site:"markers",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:739.5},
+    {i:18,stage:"pre_head",site:"all",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:813.3},
+    {i:19,stage:"pre_head",site:"all",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:854.0},
+    {i:20,stage:"pre_head",site:"all",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:1114.7},
+    {i:21,stage:"pre_head",site:"all",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:452.5},
+    {i:22,stage:"pre_head",site:"all",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:732.2},
+    {i:23,stage:"pre_head",site:"all",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:566.3},
+    {i:24,stage:"pre_head",site:"all",status:"FAIL",hits:0,spread:0.008134,p:0.334416,ms:534.2}
+  ]
+};
+const BENCH = {
+  tag:"before",
+  channel:{status:"WARN",aligned:false,hits:2,n:3,max_logit_spread:0.005037,mean_max_prob:0.333956},
+  latency:{"1 问题":{latency_ms:228.04,ms_per_question:228.04,tokens:85},
+           "5 问题":{latency_ms:971.75,ms_per_question:194.35,tokens:179},
+           "10 问题":{latency_ms:842.89,ms_per_question:84.29,tokens:294}},
+  label_accuracy:{n:26,choice_top1_acc:0.0}
+};
+const SAMPLES = 26;
+
+/* ============ 通用渲染 ============ */
+const $ = s=>document.querySelector(s);
+const fmt = (x,d=2)=> (typeof x==='number'&&isFinite(x))?x.toFixed(d):'—';
+const sci = x=> x.toExponential(2);
+const stageBadge = s=> s==='PASS'?['b-ok','PASS']:(s==='WARN'?['b-warn','WARN']:(s==='FAIL'?['b-bad','FAIL']:['b-idle',s]));
+
+function renderKPIs(){
+  const ch=ALIGN.best;
+  const kp=[
+    {v:ch.status, cls:ch.status==='WARN'?'b-warn':(ch.aligned?'b-ok':'b-bad'), k:'对齐状态', sm:'25/25 配置未通过'},
+    {v:sci(ch.max_logit_spread), k:'最大 logit 极差', sm:'阈值需 ≫ 1e-2'},
+    {v:(BENCH.label_accuracy.choice_top1_acc*100).toFixed(1)+'%', cls:'b-bad', k:'标签准确率 (top1)', sm:'n='+BENCH.label_accuracy.n+' 样本'},
+    {v:MODEL.params, k:'模型规模', sm:MODEL.tensors+' 张量 / '+MODEL.sizeMB+' MB'}
+  ];
+  $('#kpis').innerHTML = kp.map(c=>`<div class="kpi">
+     <div class="v">${c.cls?`<span class="badge ${c.cls}">${c.v}</span>`:c.v}</div>
+     <div class="k">${c.k}</div><div class="sm">${c.sm}</div></div>`).join('');
+}
+
+function renderFlow(){
+  const stages=[
+    {ph:'Phase 0',nm:'通道对齐',ds:'扫描 3 未知 (type_emb/模板/读出)',badge:['b-warn','WARN · 未通过']},
+    {ph:'数据集',nm:'Dataloader',ds:'16 场景 + 2048 → rule 教师标签',badge:['b-ok','就绪 · '+SAMPLES+' 样本']},
+    {ph:'微调管线',nm:'Pipeline',ds:'head-only / full(torch+CUDA)',badge:['b-idle','待对齐']},
+    {ph:'评测',nm:'Benchmark',ds:'对齐门 + 标签准确率 + 迁移',badge:['b-ok','就绪']}
+  ];
+  $('#flow').innerHTML = stages.map((s,idx)=>{
+    const html=`<div class="fstage" onclick="goSec(${idx})">
+      <div class="ph">${s.ph}</div><div class="nm">${s.nm}</div>
+      <div class="ds">${s.ds}</div>
+      <span class="badge ${s.badge[0]}">${s.badge[1]}</span></div>`;
+    const arr = idx<stages.length-1?`<div class="arrow">→</div>`:'';
+    return html+arr;
+  }).join('');
+}
+function goSec(i){ const ids=['sec-flow','sec-status','sec-interact','sec-score'];
+  const el=document.getElementById(ids[Math.min(i,3)]); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }
+
+function renderStatus(){
+  const mf=[
+    ['参数 / 张量',MODEL.params+' / '+MODEL.tensors],
+    ['权重体积',MODEL.sizeMB+' MB'],
+    ['层数 / hidden / heads',MODEL.layers+' / '+MODEL.hidden+' / '+MODEL.heads],
+    ['Tokenizer',MODEL.tokenizer],
+    ['RoPE',MODEL.rope],
+    ['注意力',MODEL.attn],
+    ['Norm',MODEL.norm]
+  ];
+  $('#modelFacts').innerHTML = mf.map(r=>`<tr><td>${r[0]}</td><td class="mono" style="text-align:right">${r[1]}</td></tr>`).join('');
+  const c=ALIGN.best;
+  const cf=[
+    ['状态',`<span class="badge b-warn">${c.status}</span>`],
+    ['命中 / 总数',c.hits+' / '+c.n],
+    ['logit 极差',sci(c.max_logit_spread)],
+    ['平均最大概率',fmt(c.mean_max_prob,3)],
+    ['对齐判定',c.aligned?'PASS':'FAIL（需 hits=n 且 spread≫1e-2）']
+  ];
+  $('#channelFacts').innerHTML = cf.map(r=>`<tr><td>${r[0]}</td><td style="text-align:right">${r[1]}</td></tr>`).join('');
+}
+
+let fStage='all', fSite='all';
+function curFilter(){
+  return ALIGN.results.filter(r=> (fStage==='all'||r.stage===fStage) && (fSite==='all'||r.site===fSite));
+}
+function renderGrid(){
+  const rows=curFilter();
+  $('#gridBody').innerHTML = rows.map(r=>{
+    const b = r.status==='WARN'?'b-warn':(r.status==='FAIL'?'b-bad':'b-ok');
+    return `<tr>
+      <td class="mono">${r.i}</td>
+      <td class="mono">${r.stage}</td>
+      <td class="mono">${r.site}</td>
+      <td><span class="badge ${b}">${r.status}</span></td>
+      <td class="mono" style="text-align:right">${r.hits}/${ALIGN.best.n}</td>
+      <td class="mono" style="text-align:right">${sci(r.spread)}</td>
+      <td class="mono" style="text-align:right">${fmt(r.p,3)}</td>
+      <td class="mono" style="text-align:right">${fmt(r.ms,0)}</td>
+    </tr>`;
+  }).join('');
+  const maxV=0.01; const W=1000,H=150,pad=6;
+  const bw=W/rows.length;
+  const svg=rows.map((r,idx)=>{
+    const h=Math.max(2,(r.spread/maxV)*(H-2*pad));
+    const col=r.status==='WARN'?'#d98a00':'#d64545';
+    const x=idx*bw+1, y=H-pad-h;
+    return `<rect x="${x}" y="${y}" width="${bw-2}" height="${h}" fill="${col}" rx="1.5"/>`;
+  }).join('') + `<line x1="0" y1="${H-pad-(1e-2/maxV)*(H-2*pad)}" x2="${W}" y2="${H-pad-(1e-2/maxV)*(H-2*pad)}" stroke="#9aa6b8" stroke-dasharray="4 3"/>`;
+  $('#barChart').innerHTML=svg;
+}
+function updateBestSummary(){
+  const rows=curFilter();
+  const best=rows.reduce((a,b)=> (b.hits>a.hits || (b.hits===a.hits && b.spread>a.spread))?b:a, rows[0]);
+  $('#bestSummary').innerHTML = `当前筛选（阶段=<b>${fStage}</b> · 位点=<b>${fSite}</b>）共 <b>${rows.length}</b> 配置 → `
+    + `最佳：<b>#${best.i} ${best.stage}/${best.site}</b> · ${best.status} · hits=${best.hits}/${ALIGN.best.n} · spread=${sci(best.spread)}。`
+    + ` 全部未达对齐阈值 1e-2 —— 说明 cfg 子空间不足以对齐，真实未对齐项在 <b>prompt 模板 / head 读出位置</b>。`;
+  $('#filterPill').textContent = `筛选: stage=${fStage} site=${fSite} → ${rows.length} 项`;
+}
+function bindSeg(id,key){
+  const el=document.getElementById(id);
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    el.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    if(key==='stage') fStage=b.dataset.v;
+    if(key==='site') fSite=b.dataset.v;
+    renderGrid(); updateBestSummary();
+  });
+}
+function renderBench(){
+  const b=BENCH;
+  const lat = b.latency;
+  const rows=[
+    ['对齐状态',`<span class="badge b-warn">${b.channel.status}</span>`,'<span class="dim">待训练</span>'],
+    ['标签准确率 (top1)',(b.label_accuracy.choice_top1_acc*100).toFixed(1)+'% (n='+b.label_accuracy.n+')','<span class="dim">—</span>'],
+    ['延迟 1 问题',fmt(lat['1 问题'].latency_ms,1)+' ms','<span class="dim">—</span>'],
+    ['延迟 5 问题',fmt(lat['5 问题'].latency_ms,1)+' ms ('+fmt(lat['5 问题'].ms_per_question,1)+' ms/q)','<span class="dim">—</span>'],
+    ['延迟 10 问题',fmt(lat['10 问题'].latency_ms,1)+' ms ('+fmt(lat['10 问题'].ms_per_question,1)+' ms/q)','<span class="dim">—</span>']
+  ];
+  $('#benchBody').innerHTML = rows.map(r=>`<tr><td>${r[0]}</td><td style="text-align:right">${r[1]}</td><td style="text-align:right">${r[2]}</td></tr>`).join('');
+}
+function renderConcl(){
+  $('#concl').innerHTML = `<b>核心结论：</b>Phase 0 扫描 25 个 cfg 组合，<b>0 个通过对齐</b>。`
+    + `input 阶段 hits=2/3、spread=${sci(0.005037)}（WARN）；pre_head 阶段 hits=0/3、spread=${sci(0.008134)}（FAIL，更差）。`
+    + `可经 cfg 切换的子空间（type_emb 阶段/位点、温度置换）不足以对齐；真实未对齐项在 <b>prompt 模板 / head 读出位置</b>`
+    + `（head_act 虽声明但 forward 硬编码 gelu，属 inert）。基线 toy 集标签准确率 <b>0.0%</b> —— 通道未对齐时读出值无意义，`;
+}
+
+/* 文件刷新（载入真实产出） */
+function handleFile(f){
+  const rd=new FileReader();
+  rd.onload=()=>{ try{
+    const j=JSON.parse(rd.result);
+    if(j.results && Array.isArray(j.results)){
+      ALIGN.results = j.results.map((r,idx)=>({
+        i:idx, stage:r.cfg.type_emb_stage||'baseline', site:r.cfg.type_emb_site||'-',
+        status:r.status, hits:r.hits, spread:r.max_logit_spread, p:r.mean_max_prob, ms:r.elapsed_ms
+      }));
+      ALIGN.all_aligned=j.all_aligned; ALIGN.best={...ALIGN.best,...(j.best||{})};
+      if(j.generated_at) ALIGN.generated_at=j.generated_at;
+      renderKPIs(); renderGrid(); updateBestSummary(); renderConcl(); $('#genTag').textContent=j.generated_at||'';
+    } else if(j.metrics && j.metrics.channel){
+      Object.assign(BENCH, {channel:j.metrics.channel, latency:j.metrics.latency||BENCH.latency,
+        label_accuracy:j.metrics.label_accuracy||BENCH.label_accuracy, tag:j.tag||BENCH.tag});
+      renderKPIs(); renderBench();
+    }
+    alert('已载入 '+f.name);
+  }catch(e){ alert('解析失败：'+e.message); } };
+  rd.readAsText(f);
+}
+
+/* ============ 实时控制端（live，后端连接时启用） ============ */
+let LIVE=false, LAST_STATE=null;
+
+async function apiGet(p){ const r=await fetch(p); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
+async function apiPost(p,body){ const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); return r.json(); }
+
+function setBackend(on){
+  LIVE=on;
+  const pill=$('#bePill');
+  pill.className='be '+(on?'on':'off');
+  $('#beText').textContent = on?'后端已连接':'后端未连接';
+}
+function basename(p){ return (p||'').split(/[\\/]/).pop(); }
+
+function updateKPIsLive(m){
+  // 用实时模型事实覆盖 KPI
+  const ch=m.channel, acc=m.label_accuracy;
+  const kp=[
+    {v: ch?ch.status:'—', cls: ch?stageBadge(ch.status)[0]:'b-idle', k:'对齐状态', sm: ch?`hits ${ch.hits}/${ch.n}`:'未探测'},
+    {v: ch?sci(ch.max_logit_spread):'—', k:'最大 logit 极差', sm:'阈值需 ≫ 1e-2'},
+    {v: acc?(acc.choice_top1_acc*100).toFixed(1)+'%':'—', cls: acc&&acc.choice_top1_acc>=0.25?'b-ok':'b-bad', k:'标签准确率 (top1)', sm: acc?('n='+acc.n):'—'},
+    {v: m.facts?m.facts.params:'—', k:'模型规模', sm: basename(m.path)||''}
+  ];
+  $('#kpis').innerHTML = kp.map(c=>`<div class="kpi">
+     <div class="v">${c.cls?`<span class="badge ${c.cls}">${c.v}</span>`:c.v}</div>
+     <div class="k">${c.k}</div><div class="sm">${c.sm}</div></div>`).join('');
+}
+
+function updateMonitor(m, ft){
+  $('#monModel').textContent = m.path?basename(m.path):'—';
+  // 对齐门
+  const ch=m.channel;
+  if(m.loading){ $('#monChannel').innerHTML='<span class="badge b-idle"><span class="spinner"></span>加载中</span>'; }
+  else if(ch){ const [bc,bv]=stageBadge(ch.status); $('#monChannel').innerHTML=`<span class="badge ${bc}">${bv}</span>`; }
+  else { $('#monChannel').innerHTML='<span class="badge b-idle">未探测</span>'; }
+  $('#monSpread').textContent = ch?sci(ch.max_logit_spread):'—';
+  $('#monProb').textContent  = ch?fmt(ch.mean_max_prob,4):'—';
+  const lat=m.latency;
+  $('#monLat1').textContent = lat?fmt(lat['1 问题'].latency_ms,1)+' ms':'—';
+  $('#monLat5').textContent = lat?fmt(lat['5 问题'].latency_ms,1)+' ms':'—';
+  const acc=m.label_accuracy;
+  $('#monAcc').textContent = acc?(acc.choice_top1_acc*100).toFixed(1)+'% (n='+acc.n+')':'—';
+  // 上次微调 before→after
+  const r=ft&&ft.result;
+  $('#monFt').textContent = r?`${fmt(r.before_acc*100,1)}% → ${fmt(r.after_acc*100,1)}% (Δ ${fmt(r.delta*100,1)}pp)`:'—';
+}
+
+function loadStatusText(m){
+  if(m.loading) return '<span class="spinner"></span> 正在加载…';
+  if(m.error) return '<span style="color:var(--bad)">加载失败：'+m.error+'</span>';
+  if(m.loaded) return '已加载：<b>'+basename(m.path)+'</b> · 对齐 '+m.channel.status+' · acc '+(m.label_accuracy?(m.label_accuracy.choice_top1_acc*100).toFixed(1)+'%':'—');
+  return '尚未加载模型。';
+}
+
+function drawLoss(curve){
+  const svg=$('#lossChart');
+  if(!curve||curve.length===0){ svg.innerHTML='<text x="20" y="85" fill="#9aa6b8" font-size="14" font-family="monospace">训练开始后显示 loss 曲线…</text>'; return; }
+  const W=1000,H=150,pad=10;
+  let maxL=0,maxE=1;
+  curve.forEach(([e,l])=>{ maxL=Math.max(maxL,l); maxE=Math.max(maxE,e); });
+  const xs=i=> pad + (curve[i][0]/maxE)*(W-2*pad);
+  const ys=i=> H-pad - (curve[i][1]/maxL)*(H-2*pad);
+  let pts=curve.map((_,i)=>`${xs(i).toFixed(1)},${ys(i).toFixed(1)}`).join(' ');
+  let dots=curve.map((_,i)=>`<circle cx="${xs(i).toFixed(1)}" cy="${ys(i).toFixed(1)}" r="2.5" fill="#2f6fed"/>`).join('');
+  let last=curve[curve.length-1];
+  let lbl=`<text x="${xs(curve.length-1).toFixed(1)}" y="${(ys(curve.length-1)-8).toFixed(1)}" fill="#2f6fed" font-size="12" font-family="monospace" text-anchor="end">ep${last[0]} · ${last[1].toFixed(4)}</text>`;
+  let axis=`<line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="#e3e6ec"/>`;
+  svg.innerHTML = axis + `<polyline points="${pts}" fill="none" stroke="#2f6fed" stroke-width="1.6"/>` + dots + lbl;
+}
+
+function stageClass(s){
+  return s==='done'?'done':(s==='error'?'err':(s==='stopped'?'stop':((s==='convert'||s==='train')?'run':'idle')));
+}
+
+function updateFinetune(ft, log){
+  const st=ft.stage;
+  $('#ftStage').className='stage '+stageClass(st);
+  $('#ftStage').textContent = st + (ft.running?' · 运行中':'');
+  // 按钮态
+  $('#btnFt').disabled = ft.running;
+  $('#btnFtStop').disabled = !ft.running;
+  // 曲线
+  drawLoss(ft.loss_curve);
+  // 日志
+  const box=$('#ftLog');
+  const txt=(log&&log.length)?log.join('\n'):'等待微调启动…';
+  if(box.textContent!==txt){ box.textContent=txt; box.scrollTop=box.scrollHeight; }
+  // 结果摘要
+  const r=ft.result;
+  if(r){
+    $('#ftSummary').innerHTML = `微调完成：choice top1 <b>${(r.before_acc*100).toFixed(1)}%</b> → `
+      + `<b>${(r.after_acc*100).toFixed(1)}%</b>（Δ <b>${(r.delta*100).toFixed(1)}pp</b>）。`
+      + (ft.auto_loaded?' 已自动重载微调后模型并刷新运行监控。':'')
+      + ` <span class="dim">${r.note||''}</span>`;
+  } else if(st==='error'){
+    $('#ftSummary').innerHTML = '<span style="color:var(--bad)">微调失败：'+(ft.error||'未知错误')+'</span>';
+  } else if(st==='idle'){
+    $('#ftSummary').textContent='—';
+  }
+}
+
+function onLive(s){
+  LAST_STATE=s;
+  const m=s.model||{}, ft=s.finetune||{};
+  $('#genTag').textContent = 'LIVE · '+(m.path?basename(m.path):'未加载');
+  if(m.loaded||m.loading) updateKPIsLive(m);
+  updateMonitor(m, ft);
+  $('#loadStatus').innerHTML = loadStatusText(m);
+  updateFinetune(ft, s.ft_log);
+}
+
+async function refreshModels(){
+  try{
+    const arr=await apiGet('/api/models');
+    const sel=$('#modelSelect');
+    sel.innerHTML = arr.map(x=>`<option value="${x.path}">${x.name}</option>`).join('');
+    if(arr.length===0) sel.innerHTML='<option>未找到 .safetensors</option>';
+  }catch(e){ /* 离线 */ }
+}
+
+async function poll(){
+  try{
+    const s=await apiGet('/api/state');
+    if(!LIVE) setBackend(true);
+    onLive(s);
+  }catch(e){
+    if(LIVE) setBackend(false);
+  }
+}
+
+/* 控制动作 */
+function curModelPath(){
+  const manual=$('#modelPath').value.trim();
+  if(manual) return manual;
+  const sel=$('#modelSelect');
+  return sel.value && sel.value!=='加载中…' ? sel.value : '';
+}
+$('#btnLoad').onclick=async ()=>{
+  const p=curModelPath();
+  if(!p){ alert('请选择或输入模型路径'); return; }
+  $('#loadStatus').innerHTML='<span class="spinner"></span> 请求加载 '+basename(p)+' …';
+  try{ await apiPost('/api/load_model',{path:p}); }catch(e){ alert('请求失败：'+e.message); }
+};
+$('#btnRefreshModels').onclick=refreshModels;
+$('#btnAlign').onclick=()=> apiPost('/api/align').catch(()=>{});
+$('#btnBench').onclick=()=> apiPost('/api/benchmark').catch(()=>{});
+$('#btnFt').onclick=async ()=>{
+  const epochs=parseInt($('#ftEpochs').value)||80;
+  const lr=parseFloat($('#ftLr').value)||0.02;
+  try{ const r=await apiPost('/api/finetune',{epochs,lr});
+    if(r && r.ok){ $('#ftSummary').textContent='微调已启动…'; }
+    else if(r && r.error){ alert('无法启动：'+r.error); }
+  }catch(e){ alert('请求失败：'+e.message); }
+};
+$('#btnFtStop').onclick=()=> apiPost('/api/finetune/stop').catch(()=>{});
+
+/* ============ init ============ */
+$('#genTag').textContent=ALIGN.generated_at;
+$('#footGen').textContent=ALIGN.generated_at;
+renderKPIs(); renderFlow(); renderStatus();
+bindSeg('seg_stage','stage'); bindSeg('seg_site','site');
+renderGrid(); updateBestSummary(); renderBench(); renderConcl();
+$('#btnBest').onclick=updateBestSummary;
+$('#btnAll').onclick=()=>{ fStage='all'; fSite='all';
+  document.querySelectorAll('#seg_stage button,#seg_site button').forEach(b=>b.classList.remove('on'));
+  document.querySelector('#seg_stage button[data-v="input"]').classList.add('on');
+  document.querySelector('#seg_site button[data-v="markers"]').classList.add('on');
+  renderGrid(); updateBestSummary(); };
+$('#fileIn').onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); };
+
+// 启动实时轮询
+setBackend(false);
+refreshModels();
+poll();
+setInterval(poll, 1500);
+</script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+{
+  "experiment": "maze_head_only_finetune",
+  "date": "2026-09-22",
+  "task": "把用户写入 artifacts/benchmark_before.json 的迷宫 A* 回溯轨迹格式化为微调数据集，并做 head-only 微调",
+  "dataset": {
+    "source": "artifacts/benchmark_before.json（148 步 A* 迷宫解，Lab.hist 格式，rd=教师标签）",
+    "schema": "dataset.py 规定：{scene,seed,step,state,questions,labels,ids,marker_pos,marker_type,spans,tokens}",
+    "n_samples": 148,
+    "method": "reconstructed（seed 未在 0..200000 + 常见种子中匹配到，无法恢复原始迷宫网格）",
+    "questions": ["move(choice, criteria {up,down,left,right})"],
+    "label": "labels.move.key = rd.choice（A* 选中的最小剩余步方向）",
+    "state": "用轨迹字段重建：位置 + legal + 各方向剩余步（决策等价代理表示，非原始 grid ASCII）",
+    "output_file": "artifacts/maze_dataset.jsonl"
+  },
+  "training": {
+    "backend": "head-only（纯 numpy，无 torch 依赖）",
+    "trainable": "scorer = LN(768) -> Linear(768->768) -> gelu -> Linear(768->1)，op 索引 [0,1,3]",
+    "frozen": "22 层编码器 + 头层 + type_emb + temperature 全部冻结",
+    "optimizer": "Adam(lr=0.02, b1=0.9, b2=0.999)",
+    "epochs": 80,
+    "loss": "choice CE（每样本 4 选项 logits 上教师方向的负对数似然）",
+    "precompute": "编码器冻结 -> marker_h 预计算一次并缓存(artifacts/maze_markers.npz)，训练只在 scorer 上做解析梯度",
+    "trainer_file": "finetune_run.py",
+    "converter_file": "convert_maze.py"
+  },
+  "results": {
+    "choice_top1_before": 0.115,
+    "choice_top1_after": 0.453,
+    "choice_top1_delta": 0.338,
+    "loss_start": 1.3873,
+    "loss_end": 1.2415,
+    "alignment_before": {"status": "WARN", "aligned": false, "hits": "2/3", "max_logit_spread": 5.04e-03},
+    "alignment_after": {"status": "FAIL", "aligned": false, "hits": "0/3", "max_logit_spread": 2.00e+00},
+    "measured_by": "benchmark.py 实跑全编码器（与 scorer_forward 代理一致：after 0.4527 vs 0.453）"
+  },
+  "interpretation": [
+    "head-only 训练把迷宫 choice top-1 从 11.5%(低于随机 25%) 拉到 45.3%，说明即便编码器未对齐，4 个选项的 marker 向量仍含可被 scorer 利用的区分信号。",
+    "但通道对齐门从 WARN(2/3) 退化为 FAIL(0/3)，logit 极差从 5e-3 暴涨到 2.0 —— 单任务 scorer 过拟合放大了选项间差异，破坏了跨问题通道标定。",
+    "印证 FRAMEWORK.md 的 Phase-0-first：单任务头训练能提升该任务排序，却会牺牲通用跨问题校准；通用可靠性仍需先解通道对齐（prompt 模板 / head 读出位置），再谈微调。"
+  ],
+  "artifacts": {
+    "dataset": "artifacts/maze_dataset.jsonl",
+    "finetuned_model": "artifacts/model_maze_ft.safetensors",
+    "benchmarks": ["artifacts/benchmark_before_ft.json", "artifacts/benchmark_after_ft.json"],
+    "markers_cache": "artifacts/maze_markers.npz"
+  },
+  "next_steps": [
+    "Phase-0 通道对齐：在 prompt 模板 / head 读出位置维度搜索，对齐后重跑本微调应能在不破坏标定的前提下进一步提升 choice acc。",
+    "若需真实 grid 状态：用 node 驱动 maze_laya.html 的 SCENE 复跑该轨迹（已知 algo='astar', size=16）以恢复精确 text()，消除 reconstructed 代理。",
+    "dashboard.html 可增「微调 before/after」面板，嵌入 benchmark_before_ft.json / benchmark_after_ft.json。"
+  ]
+}

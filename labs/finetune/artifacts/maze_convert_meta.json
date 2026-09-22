@@ -1,0 +1,9 @@
+{
+  "method": "reconstructed",
+  "seed": null,
+  "n_samples": 148,
+  "optimal_target": 148,
+  "search_range": 200000,
+  "scene": "maze",
+  "note": "reconstructed: 未匹配 seed，用轨迹字段重建 state（决策等价的代理表示）； questions=move(choice)，labels.move.key=rd.choice。"
+}

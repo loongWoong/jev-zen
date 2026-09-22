@@ -1,3 +1,14 @@
 model.safetensors
 /.workbuddy/*
-*.pyc
+
+# labs/finetune：忽略生成物 / 大文件 / 缓存
+# - model_maze_ft.safetensors 约 643MB（微调产出，勿入库）
+# - maze_markers.npz 为 marker_h 预计算缓存
+# - *.jsonl 为派生数据集 / 自测样本
+# - *.log 为运行日志
+labs/finetune/__pycache__/
+labs/finetune/*.log
+labs/finetune/artifacts/*.log
+labs/finetune/artifacts/*.safetensors
+labs/finetune/artifacts/*.npz
+labs/finetune/artifacts/*.jsonl

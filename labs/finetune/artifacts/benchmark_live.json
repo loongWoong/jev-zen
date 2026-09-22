@@ -1,0 +1,35 @@
+{
+  "tag": "live",
+  "model": "C:\\Users\\Administrator\\WorkBuddy\\Worktrees\\jev-zen\\main-7e20891f\\labs\\finetune\\artifacts\\model_maze_ft.safetensors",
+  "metrics": {
+    "channel": {
+      "status": "FAIL",
+      "aligned": false,
+      "hits": 1,
+      "n": 3,
+      "max_logit_spread": 0.736725,
+      "mean_max_prob": 0.382661
+    },
+    "latency": {
+      "1 问题": {
+        "latency_ms": 303.48,
+        "ms_per_question": 303.48,
+        "tokens": 85
+      },
+      "5 问题": {
+        "latency_ms": 710.36,
+        "ms_per_question": 142.07,
+        "tokens": 179
+      },
+      "10 问题": {
+        "latency_ms": 868.64,
+        "ms_per_question": 86.86,
+        "tokens": 294
+      }
+    },
+    "label_accuracy": {
+      "n": 148,
+      "choice_top1_acc": 0.35135135135135137
+    }
+  }
+}

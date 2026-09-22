@@ -1,0 +1,512 @@
+{
+  "generated_at": "2026-09-22T15:03:53",
+  "model": "C:/Users/Administrator/Downloads/jev-zen/model.safetensors",
+  "grid": "small",
+  "n_configs": 25,
+  "best": {
+    "cfg": {},
+    "tag": "(baseline)",
+    "status": "WARN",
+    "hits": 2,
+    "n": 3,
+    "aligned": false,
+    "max_logit_spread": 0.005037,
+    "mean_max_prob": 0.333956,
+    "elapsed_ms": 1217.4
+  },
+  "all_aligned": false,
+  "note": "可经 cfg 切换的维度（type_emb_stage/site、temperature 置换、max_prefixes）不足以让 channel_probe 通过 → 真实未对齐项在 prompt 模板 / head 读出位置，需走 --try-template 或 head 重训练。见 FRAMEWORK.md §1.2。",
+  "results": [
+    {
+      "cfg": {},
+      "tag": "(baseline)",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 1217.4
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 735.0
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 798.7
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 749.9
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 467.0
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 789.3
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 750.0
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 459.6
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 784.2
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 915.1
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 678.8
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 642.2
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "input",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=input",
+      "status": "WARN",
+      "hits": 2,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956,
+      "elapsed_ms": 1103.2
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 793.2
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 766.4
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 626.7
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 756.2
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 739.5
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "markers",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=markers,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 813.3
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 854.0
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 1114.7
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 452.5
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 732.2
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 566.3
+    },
+    {
+      "cfg": {
+        "type_emb_stage": "pre_head",
+        "type_emb_site": "all",
+        "temperature_mode": "manual",
+        "temperature_manual": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "tag": "temperature_manual=[1.0, 1.0, 1.0],temperature_mode=manual,type_emb_site=all,type_emb_stage=pre_head",
+      "status": "FAIL",
+      "hits": 0,
+      "n": 3,
+      "aligned": false,
+      "max_logit_spread": 0.008134,
+      "mean_max_prob": 0.334416,
+      "elapsed_ms": 534.2
+    }
+  ]
+}

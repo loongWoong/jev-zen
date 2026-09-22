@@ -1,0 +1,35 @@
+{
+  "tag": "after_ft",
+  "model": "labs/finetune/artifacts/model_maze_ft.safetensors",
+  "metrics": {
+    "channel": {
+      "status": "FAIL",
+      "aligned": false,
+      "hits": 0,
+      "n": 3,
+      "max_logit_spread": 1.998535,
+      "mean_max_prob": 0.60854
+    },
+    "latency": {
+      "1 问题": {
+        "latency_ms": 262.25,
+        "ms_per_question": 262.25,
+        "tokens": 85
+      },
+      "5 问题": {
+        "latency_ms": 902.98,
+        "ms_per_question": 180.6,
+        "tokens": 179
+      },
+      "10 问题": {
+        "latency_ms": 918.69,
+        "ms_per_question": 91.87,
+        "tokens": 294
+      }
+    },
+    "label_accuracy": {
+      "n": 148,
+      "choice_top1_acc": 0.4527027027027027
+    }
+  }
+}

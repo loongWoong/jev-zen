@@ -1,0 +1,35 @@
+{
+  "tag": "before_ft",
+  "model": "C:/Users/Administrator/Downloads/jev-zen/model.safetensors",
+  "metrics": {
+    "channel": {
+      "status": "WARN",
+      "aligned": false,
+      "hits": 2,
+      "n": 3,
+      "max_logit_spread": 0.005037,
+      "mean_max_prob": 0.333956
+    },
+    "latency": {
+      "1 问题": {
+        "latency_ms": 929.6,
+        "ms_per_question": 929.6,
+        "tokens": 85
+      },
+      "5 问题": {
+        "latency_ms": 878.91,
+        "ms_per_question": 175.78,
+        "tokens": 179
+      },
+      "10 问题": {
+        "latency_ms": 960.36,
+        "ms_per_question": 96.04,
+        "tokens": 294
+      }
+    },
+    "label_accuracy": {
+      "n": 148,
+      "choice_top1_acc": 0.11486486486486487
+    }
+  }
+}
