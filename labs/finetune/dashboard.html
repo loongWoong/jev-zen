@@ -169,6 +169,16 @@
       </div>
     </div>
 
+    <div class="field" style="margin-top:12px">
+      <label>后端地址</label>
+      <input type="text" id="backendUrl" placeholder="http://127.0.0.1:8772" style="min-width:260px;max-width:100%" />
+      <button class="btn ghost" id="btnReconnect">重连</button>
+      <span class="pill" id="beResolved">—</span>
+    </div>
+    <div class="hint" id="beHint">若显示「后端未连接」：确认已运行
+      <code>python control_server.py --port 8772</code>，并<b>直接打开</b> <code>http://127.0.0.1:8772/</code>（推荐，同源）。
+      从本地文件或静态预览打开时会自动尝试连到 <code>127.0.0.1:8772</code>（跨源，服务端已开 CORS）。</div>
+
     <!-- 微调 -->
     <div class="card" style="margin-top:16px">
       <h3>微调（head-only · scorer 头训练）<span class="d">convert_maze → finetune_run</span></h3>
@@ -498,15 +508,29 @@ function handleFile(f){
 
 /* ============ 实时控制端（live，后端连接时启用） ============ */
 let LIVE=false, LAST_STATE=null;
+let BASE='';                                       // 解析到的后端基址（'' = 同源）
+// 绝对地址优先 → 任何来源（file:// / 静态预览 / 同源）都能直连后端，且不产生失败探测的 404 噪声
+const DEFAULT_BASES=['http://127.0.0.1:8772', 'http://localhost:8772', ''];
+let BASE_CANDIDATES=[...DEFAULT_BASES];
 
-async function apiGet(p){ const r=await fetch(p); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
-async function apiPost(p,body){ const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); return r.json(); }
+async function apiGet(p){ const r=await fetch(BASE+p,{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
+async function apiPost(p,body){ const r=await fetch(BASE+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); return r.json(); }
+
+async function probeBase(b){
+  try{ const r=await fetch(b+'/api/state',{cache:'no-store'}); return r.ok; }catch(e){ return false; }
+}
+async function resolveBackend(){
+  for(const b of BASE_CANDIDATES){ if(await probeBase(b)){ BASE=b; return true; } }
+  return false;
+}
 
 function setBackend(on){
   LIVE=on;
   const pill=$('#bePill');
   pill.className='be '+(on?'on':'off');
-  $('#beText').textContent = on?'后端已连接':'后端未连接';
+  const where = BASE ? BASE.replace(/^https?:\/\//,'') : (location.origin==='null'?'同源(file)':location.origin);
+  $('#beText').textContent = on ? ('后端已连接 · '+where) : '后端未连接';
+  const rv=$('#beResolved'); if(rv) rv.textContent = on ? ('BASE = '+(BASE||'(同源)')) : '未解析';
 }
 function basename(p){ return (p||'').split(/[\\/]/).pop(); }
 
@@ -619,10 +643,12 @@ async function refreshModels(){
 async function poll(){
   try{
     const s=await apiGet('/api/state');
-    if(!LIVE) setBackend(true);
+    if(!LIVE){ setBackend(true); refreshModels(); }
     onLive(s);
   }catch(e){
     if(LIVE) setBackend(false);
+    // 未连接时自动解析后端基址（支持 file:// 或静态预览页打开的场景）
+    if(await resolveBackend()){ setBackend(true); refreshModels(); try{ onLive(await apiGet('/api/state')); }catch(_){} }
   }
 }
 
@@ -652,6 +678,21 @@ $('#btnFt').onclick=async ()=>{
 };
 $('#btnFtStop').onclick=()=> apiPost('/api/finetune/stop').catch(()=>{});
 
+async function reconnect(){
+  const v=($('#backendUrl').value||'').trim().replace(/\/+$/,'');
+  BASE_CANDIDATES = v ? [v, ...DEFAULT_BASES.filter(b=>b!==v)] : [...DEFAULT_BASES];
+  $('#beResolved').textContent='解析中…';
+  if(await resolveBackend()){
+    setBackend(true); refreshModels();
+    try{ onLive(await apiGet('/api/state')); }catch(_){}
+  }else{
+    setBackend(false);
+    $('#beHint').innerHTML='仍连不上 —— 确认后端已启动、端口一致（默认 8772），或直接用 <code>http://127.0.0.1:8772/</code> 打开本页。';
+  }
+}
+$('#btnReconnect').onclick=reconnect;
+$('#backendUrl').addEventListener('keydown',e=>{ if(e.key==='Enter') reconnect(); });
+
 /* ============ init ============ */
 $('#genTag').textContent=ALIGN.generated_at;
 $('#footGen').textContent=ALIGN.generated_at;
@@ -666,11 +707,14 @@ $('#btnAll').onclick=()=>{ fStage='all'; fSite='all';
   renderGrid(); updateBestSummary(); };
 $('#fileIn').onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); };
 
-// 启动实时轮询
-setBackend(false);
-refreshModels();
-poll();
-setInterval(poll, 1500);
+// 启动：先解析后端基址，再轮询（避免对非同源来源发失败请求）
+(async function boot(){
+  setBackend(false);
+  await resolveBackend();
+  await poll();
+  refreshModels();
+  setInterval(poll, 1500);
+})();
 </script>
 </body>
 </html>

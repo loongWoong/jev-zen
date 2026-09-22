@@ -325,6 +325,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
@@ -343,14 +344,15 @@ class Handler(BaseHTTPRequestHandler):
         self._send(204, b"", "text/plain")
 
     def do_GET(self):
-        if self.path in ("/", "/index.html"):
+        path = self.path.split("?", 1)[0]
+        if path in ("/", "/index.html"):
             try:
                 with open(os.path.join(HERE, "dashboard.html"), "rb") as f:
                     self._send(200, f.read(), "text/html; charset=utf-8")
             except FileNotFoundError:
                 self._send(404, "dashboard.html not found", "text/plain")
             return
-        if self.path == "/api/state":
+        if path == "/api/state":
             with LOCK:
                 snap = json.loads(json.dumps(native(STATE)))
                 log_tail = list(LOG)[-200:]
@@ -359,13 +361,14 @@ class Handler(BaseHTTPRequestHandler):
             snap["ft_log"] = ft_tail
             self._json(snap)
             return
-        if self.path == "/api/models":
+        if path == "/api/models":
             self._json(list_models())
             return
         self._send(404, "not found", "text/plain")
 
     def do_POST(self):
-        if self.path == "/api/load_model":
+        route = self.path.split("?", 1)[0]
+        if route == "/api/load_model":
             d = self._body()
             path = d.get("path")
             if not path or not os.path.isfile(path):
@@ -374,15 +377,15 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=run_load_model, args=(path,), daemon=True).start()
             self._json({"ok": True, "loading": True})
             return
-        if self.path == "/api/align":
+        if route == "/api/align":
             threading.Thread(target=run_align, daemon=True).start()
             self._json({"ok": True})
             return
-        if self.path == "/api/benchmark":
+        if route == "/api/benchmark":
             threading.Thread(target=run_benchmark, daemon=True).start()
             self._json({"ok": True})
             return
-        if self.path == "/api/finetune":
+        if route == "/api/finetune":
             with LOCK:
                 if STATE["finetune"]["running"]:
                     self._json({"ok": False, "error": "已在运行中"}, 409)
@@ -393,7 +396,7 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=run_finetune, args=(epochs, lr), daemon=True).start()
             self._json({"ok": True, "started": True})
             return
-        if self.path == "/api/finetune/stop":
+        if route == "/api/finetune/stop":
             FT_STOP.set()
             p = FT_PROC.get("proc")
             if p and p.poll() is None:
