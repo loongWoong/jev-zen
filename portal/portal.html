@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Laya 决策模型 · 全场景门户</title>
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --line:#e4e7ec; --line2:#eef1f4;
+  --text:#1d2430; --muted:#667085; --dim:#98a2b3;
+  --accent:#2f6fed; --accent-weak:#eaf1fe;
+  --ok:#0d9488; --ok-weak:#e6f6f3;
+  --warn:#c2740a; --warn-weak:#fdf3e3;
+  --radius:10px; --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:14px/1.6 var(--font);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1440px;margin:0 auto;padding:24px 22px 56px}
+header{margin-bottom:28px}
+h1{font-size:22px;font-weight:650;margin:0 0 8px;letter-spacing:.2px}
+h1 span{font-weight:400;color:var(--muted);font-size:14px;margin-left:10px}
+.lead{color:var(--muted);max-width:880px;margin:0 0 16px;font-size:14px}
+.stats{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.stat{padding:4px 10px;background:var(--panel);border:1px solid var(--line);border-radius:999px}
+.stat b{color:var(--text);font-weight:600;margin-right:4px}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;transition:transform .08s ease,box-shadow .08s ease}
+.card:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(16,24,40,.07),0 2px 4px rgba(16,24,40,.05)}
+.thumb{position:relative;width:100%;aspect-ratio:1280/820;background:var(--line2);border-bottom:1px solid var(--line)}
+.thumb img{display:block;width:100%;height:100%;object-fit:cover}
+.badge{position:absolute;top:10px;left:10px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(255,255,255,.95);border:1px solid var(--line);color:var(--accent);font-family:var(--mono)}
+.badge.verification{color:var(--warn);border-color:#f0d9ad;background:#fff8eb}
+.body{padding:14px 16px 16px;display:flex;flex-direction:column;flex:1}
+.title{font-size:16px;font-weight:650;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+.title a{color:inherit;text-decoration:none}
+.title a:hover{color:var(--accent)}
+.file{font-family:var(--mono);font-size:11px;color:var(--dim);margin-left:auto;white-space:nowrap}
+.desc{color:var(--muted);font-size:13px;line-height:1.55;margin:0 0 14px;flex:1}
+.meta{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line2);padding-top:12px}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tag{font-size:11px;color:var(--muted);background:var(--line2);padding:3px 8px;border-radius:999px;font-family:var(--mono)}
+.open{font-size:12px;color:var(--accent);text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px}
+.open:hover{text-decoration:underline}
+
+@media (max-width:640px){
+  .grid{grid-template-columns:1fr}
+  .wrap{padding:18px 14px 40px}
+  h1{font-size:18px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Laya 决策模型 · 全场景门户 <span>本地验证台 + 16 个决策实验场景</span></h1>
+    <p class="lead">
+      下面是仓库里所有可独立打开的网页快照：「验证台」负责交互式验证模型；其余 16 个实验场景均为基于 canvas 的决策游戏，
+      每个页面都内置 <code>rule</code> / <code>mix</code> / <code>model</code> 三策略对照与批量验证。
+      点击图片或标题即可打开对应页面。
+    </p>
+    <div class="stats">
+      <span class="stat"><b>17</b> pages</span>
+      <span class="stat"><b>1</b> verification console</span>
+      <span class="stat"><b>16</b> decision scenarios</span>
+      <span class="stat"><b>0</b> external runtime deps (screenshots captured offline)</span>
+    </div>
+  </header>
+
+  <main class="grid">
+
+    <article class="card">
+      <a class="thumb" href="../index.html">
+        <img src="screenshots/index_html.png" alt="Laya 决策模型 · 本地验证台" loading="lazy" />
+        <span class="badge verification">验证台</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../index.html">Laya 决策模型 · 本地验证台</a>
+          <span class="file">index.html</span>
+        </h2>
+        <p class="desc">
+          交互式模型验证入口。可编辑 state 与 typed questions，运行 30 项自检，查看 token 序列、marker 位置、
+          延迟基准、推断项与权重台账。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">模型验证</span><span class="tag">30 项自检</span><span class="tag">token 可视化</span></div>
+          <a class="open" href="../index.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../2048_laya.html">
+        <img src="screenshots/2048_laya_html.png" alt="2048 自动对局" loading="lazy" />
+        <span class="badge">主场景</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../2048_laya.html">2048 自动对局</a>
+          <span class="file">2048_laya.html</span>
+        </h2>
+        <p class="desc">
+          默认规则策略（期望搜索 + 2% 价值带破平）驱动自动对局，21/24 局达成 2048；
+          每步留痕：决策来源、规则与模型一致性、四方向概率条、前后棋盘。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">expectimax</span><span class="tag">rule·mix·model</span><span class="tag">JSONL 导出</span></div>
+          <a class="open" href="../2048_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../snake_laya.html">
+        <img src="screenshots/snake_laya_html.png" alt="贪吃蛇" loading="lazy" />
+        <span class="badge">场景 01</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../snake_laya.html">贪吃蛇</a>
+          <span class="file">snake_laya.html</span>
+        </h2>
+        <p class="desc">
+          规则策略可选 safe-BFS 寻食 + 洪水填充安全检查，或 hamilton / hybrid 回路；
+          safe 样本外长 63.5、达成 16/24；hamilton/hybrid 可填满 100 格。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">BFS</span><span class="tag">洪水填充</span><span class="tag">哈密顿</span></div>
+          <a class="open" href="../snake_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../tetris_laya.html">
+        <img src="screenshots/tetris_laya_html.png" alt="俄罗斯方块" loading="lazy" />
+        <span class="badge">场景 02</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../tetris_laya.html">俄罗斯方块</a>
+          <span class="file">tetris_laya.html</span>
+        </h2>
+        <p class="desc">
+          Dellacherie 六特征评估 + 可选 2 层前瞻。5/5 局达成 100 行目标，约 255 块 / 6.7 万分；
+          随机基线为 0 行。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">Dellacherie</span><span class="tag">2-layer 前瞻</span></div>
+          <a class="open" href="../tetris_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../minesweeper_laya.html">
+        <img src="screenshots/minesweeper_laya_html.png" alt="扫雷" loading="lazy" />
+        <span class="badge">场景 03</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../minesweeper_laya.html">扫雷</a>
+          <span class="file">minesweeper_laya.html</span>
+        </h2>
+        <p class="desc">
+          单格规则 → CSP 分量枚举 → 组合数加权概率。9×9 高胜率模式下 100 局胜率 83%
+          （basic 76% / 随机 0%）。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">CSP</span><span class="tag">组合概率</span></div>
+          <a class="open" href="../minesweeper_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../sokoban_laya.html">
+        <img src="screenshots/sokoban_laya_html.png" alt="推箱子" loading="lazy" />
+        <span class="badge">场景 04</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../sokoban_laya.html">推箱子</a>
+          <span class="file">sokoban_laya.html</span>
+        </h2>
+        <p class="desc">
+          A* 搜索 + 角落死锁剪枝。20 关全部可解，最优解 1~13 步，且均经求解器验证。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">A*</span><span class="tag">死锁剪枝</span></div>
+          <a class="open" href="../sokoban_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../puzzle15_laya.html">
+        <img src="screenshots/puzzle15_laya_html.png" alt="15 拼图" loading="lazy" />
+        <span class="badge">场景 05</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../puzzle15_laya.html">15 拼图</a>
+          <span class="file">puzzle15_laya.html</span>
+        </h2>
+        <p class="desc">
+          IDA* 搜索，启发式为曼哈顿距离 + 线性冲突。20 步打乱后 8/8 复原，步数等于最优解。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">IDA*</span><span class="tag">线性冲突</span></div>
+          <a class="open" href="../puzzle15_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../lightsout_laya.html">
+        <img src="screenshots/lightsout_laya_html.png" alt="Lights Out" loading="lazy" />
+        <span class="badge">场景 06</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../lightsout_laya.html">Lights Out</a>
+          <span class="file">lightsout_laya.html</span>
+        </h2>
+        <p class="desc">
+          点击格子翻转十字；GF(2) 高斯消元求解。4/5/6 阶各 10 局解集验证 30/30 全可解。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">GF(2)</span><span class="tag">高斯消元</span></div>
+          <a class="open" href="../lightsout_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../tictactoe_laya.html">
+        <img src="screenshots/tictactoe_laya_html.png" alt="井字棋" loading="lazy" />
+        <span class="badge">场景 07</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../tictactoe_laya.html">井字棋</a>
+          <span class="file">tictactoe_laya.html</span>
+        </h2>
+        <p class="desc">
+          完整 Minimax（评分带深度）。随机对手 300 局 299 胜 1 和 0 败；后手 200 局不败；
+          对完美对手 20 局全和。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">Minimax</span><span class="tag">100% 不败</span></div>
+          <a class="open" href="../tictactoe_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../connect4_laya.html">
+        <img src="screenshots/connect4_laya_html.png" alt="Connect 4" loading="lazy" />
+        <span class="badge">场景 08</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../connect4_laya.html">Connect 4</a>
+          <span class="file">connect4_laya.html</span>
+        </h2>
+        <p class="desc">
+          四子连珠：Minimax + α-β。对随机对手 40/40 全胜。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">Minimax</span><span class="tag">α-β</span></div>
+          <a class="open" href="../connect4_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../othello_laya.html">
+        <img src="screenshots/othello_laya_html.png" alt="黑白棋" loading="lazy" />
+        <span class="badge">场景 09</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../othello_laya.html">黑白棋</a>
+          <span class="file">othello_laya.html</span>
+        </h2>
+        <p class="desc">
+          Minimax + α-β + 位置权重评估。对随机对手 30 局 28 胜 2 和 0 败，胜率 93.3%。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">Minimax</span><span class="tag">位置权重</span></div>
+          <a class="open" href="../othello_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../maze_laya.html">
+        <img src="screenshots/maze_laya_html.png" alt="迷宫" loading="lazy" />
+        <span class="badge">场景 10</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../maze_laya.html">迷宫</a>
+          <span class="file">maze_laya.html</span>
+        </h2>
+        <p class="desc">
+          路径算法对照：BFS / A* / DFS。三种算法 12/12 局步数比 1.00×，最短路 == BFS。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">BFS</span><span class="tag">A*</span><span class="tag">DFS</span></div>
+          <a class="open" href="../maze_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../flappy_laya.html">
+        <img src="screenshots/flappy_laya_html.png" alt="Flappy Bird" loading="lazy" />
+        <span class="badge">场景 11</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../flappy_laya.html">Flappy Bird</a>
+          <span class="file">flappy_laya.html</span>
+        </h2>
+        <p class="desc">
+          阈值规则 + 上沿约束控制跳跃。6/6 局过 100 管道，最高记录 161 个；随机基线 0 个。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">阈值规则</span><span class="tag">上沿约束</span></div>
+          <a class="open" href="../flappy_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../breakout_laya.html">
+        <img src="screenshots/breakout_laya_html.png" alt="打砖块" loading="lazy" />
+        <span class="badge">场景 12</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../breakout_laya.html">打砖块</a>
+          <span class="file">breakout_laya.html</span>
+        </h2>
+        <p class="desc">
+          挡板落点预测，含顶墙反弹。6/8 局清空砖块，平均 44.5/45 块；挡板不动仅打掉 1 块。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">落点预测</span><span class="tag">反弹</span></div>
+          <a class="open" href="../breakout_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../elevator_laya.html">
+        <img src="screenshots/elevator_laya_html.png" alt="电梯调度" loading="lazy" />
+        <span class="badge">场景 13</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../elevator_laya.html">电梯调度</a>
+          <span class="file">elevator_laya.html</span>
+        </h2>
+        <p class="desc">
+          代价估计贪心 + SCAN。3 台中等场景平均等待 16.2 刻度（随机派梯 17.4），
+          4 台 17.3，1 台 28.2。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">贪心</span><span class="tag">SCAN</span></div>
+          <a class="open" href="../elevator_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../traffic_laya.html">
+        <img src="screenshots/traffic_laya_html.png" alt="交通灯控制" loading="lazy" />
+        <span class="badge">场景 14</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../traffic_laya.html">交通灯控制</a>
+          <span class="file">traffic_laya.html</span>
+        </h2>
+        <p class="desc">
+          自适应规则 + 最小绿灯保护。中等流量车辆平均等待 1.47，拥堵 2.91；
+          固定配时分别为 3.14 / 5.40。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">自适应规则</span><span class="tag">最小绿灯</span></div>
+          <a class="open" href="../traffic_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="thumb" href="../stock_laya.html">
+        <img src="screenshots/stock_laya_html.png" alt="股票买卖模拟" loading="lazy" />
+        <span class="badge">场景 15</span>
+      </a>
+      <div class="body">
+        <h2 class="title">
+          <a href="../stock_laya.html">股票买卖模拟</a>
+          <span class="file">stock_laya.html</span>
+        </h2>
+        <p class="desc">
+          双均线交叉 + 移动止损。20 组随机种子平均收益 19.54%，买入持有基准 14.19%，
+          回撤 6.4%。
+        </p>
+        <div class="meta">
+          <div class="tags"><span class="tag">双均线</span><span class="tag">移动止损</span></div>
+          <a class="open" href="../stock_laya.html">打开 →</a>
+        </div>
+      </div>
+    </article>
+
+  </main>
+</div>
+</body>
+</html>
