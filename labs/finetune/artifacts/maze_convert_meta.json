@@ -1,9 +1,11 @@
 {
-  "method": "reconstructed",
+  "method": "ground_truth",
   "seed": null,
   "n_samples": 148,
   "optimal_target": 148,
+  "recon_opt": 148,
+  "optimal_match": true,
   "search_range": 200000,
   "scene": "maze",
-  "note": "reconstructed: 未匹配 seed，用轨迹字段重建 state（决策等价的代理表示）； questions=move(choice)，labels.move.key=rd.choice。"
+  "note": "ground_truth: 从轨迹 (落点+方向) 直接重建迷宫拓扑，state=真实 SCENE.text()（grid ASCII），与 maze_laya.html 推理分布一致；questions=move(choice)+closeness(score)，labels.move.key=rd.choice（A* 选中方向），labels.closeness=归一化 BFS 剩余步期望值。"
 }

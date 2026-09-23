@@ -90,15 +90,27 @@ fp32 默认档要求：相对差 < 1e-3 且逐题 top-1 一致。
     python laya_verify_cuda.py --dtype fp16        # fp16 TensorCore 档
     python laya_verify_cuda.py --bench --batch 8   # 批量吞吐
     python laya_verify_cuda.py --port 8772         # 起服务（复用原 index.html）
+
+    # --model：指定加载哪个模型（文件 / 目录 / glob / 省略后缀 / 相对路径都行）
+    python laya_verify_cuda.py --list
+    python laya_verify_cuda.py -m labs/finetune/artifacts/model_maze_ft.safetensors --bench
+    python laya_verify_cuda.py -m ./models/maze/ --selftest      # 目录 → 找 model.safetensors
+    python laya_verify_cuda.py -m "labs/**/model*.safetensors"   # glob（须唯一命中）
+    python laya_verify_cuda.py -m other.safetensors --strict     # 配置/分词器不回落脚本目录
+    python laya_verify_cuda.py -m other.safetensors --tokenizer /path/tokenizer.json
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import glob
 import json
 import math
 import os
+import re
 import statistics
+import struct
 import sys
 import threading
 import time
@@ -122,6 +134,264 @@ except Exception as e:  # noqa: BLE001
 import laya_verify as L  # noqa: E402  复用：SafeTensors / tokenizer / Question / PRESETS / Verifier
 
 DEFAULT_MODEL = L.DEFAULT_MODEL
+
+
+# =============================================================================
+# 0. 模型定位：--model 解析（文件 / 目录 / glob / 省略后缀 / 相对路径）
+# =============================================================================
+# 为什么值得单独一层：`--model` 原来只是把字符串直接丢给 `os.path.isfile`，于是
+#   · 给目录（HF 风格的 checkpoint 目录）→ 报"找不到权重文件"
+#   · 给相对路径 → 只在 CWD 下有解，脚本目录之外的模型必须写全路径
+#   · 给错路径 → 报错里没有任何线索说明"附近有哪些模型可用"
+# 更隐蔽的一条在下游：`route()["repo"]` 的名字、`_cfg_dirs()` 的 config.json 回退
+# 目录、`find_tokenizer()` 的 tokenizer 回退目录，三处全都锚在**脚本目录的默认
+# 权重**上。也就是说哪怕加载的是 B 模型，报告里的 repo 名字、架构配置、分词器仍
+# 可能来自 A —— 这种"文件就在手边、脚本却在用另一个模型的东西"是最难排查的偏差。
+# 所以解析完成后必须把这三个锚点重钉到真正加载的模型上（见 build()）。
+
+_MODEL_SUFFIX = ".safetensors"
+_SKIP_DIRS = {"__pycache__", "node_modules", ".git", ".venv", "site-packages",
+              ".workbuddy", ".idea", ".vscode"}
+
+
+def _norm(p: str) -> str:
+    return os.path.abspath(os.path.expandvars(os.path.expanduser(str(p))))
+
+
+def model_search_dirs() -> List[str]:
+    """解析相对路径 / 扫描候选模型时的搜索根，按优先级排列。"""
+    out: List[str] = []
+    for d in [os.environ.get("LAYA_MODEL_DIR"), os.getcwd(), HERE]:
+        if not d:
+            continue
+        a = _norm(d)
+        if a not in out:
+            out.append(a)
+    return out
+
+
+def _scan_models(roots: Sequence[str], depth: int = 3) -> List[str]:
+    """在 roots 下（限深 depth）收集 *.safetensors 的绝对路径。"""
+    found: List[str] = []
+    for root in roots:
+        if not os.path.isdir(root) or os.path.dirname(root) == root:
+            continue                      # 不递归盘符根 / 家目录根
+        for dirpath, dirnames, filenames in os.walk(root):
+            rel = os.path.relpath(dirpath, root)
+            if rel != "." and rel.count(os.sep) + 1 >= depth:
+                dirnames[:] = []
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+            for fn in filenames:
+                if fn.lower().endswith(_MODEL_SUFFIX):
+                    found.append(_norm(os.path.join(dirpath, fn)))
+    return found
+
+
+def list_models() -> List[str]:
+    """本机可见的模型清单（去重 + 按路径排序）。"""
+    seen, out = set(), []
+    for p in sorted(_scan_models(model_search_dirs())):
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def show_models(spec: Optional[str] = None) -> None:
+    ms = list_models()
+    print(f"[laya-cuda] 搜索目录：{' | '.join(model_search_dirs())}")
+    if not ms:
+        print("[laya-cuda] 未发现任何 *.safetensors。"
+              "可用 --model 直接给绝对路径，或设 $LAYA_MODEL_DIR 指定搜索根。")
+        return
+    cur: Optional[str] = None
+    if spec:
+        try:
+            cur = resolve_model(spec)
+        except SystemExit:
+            cur = None
+    elif DEFAULT_MODEL:
+        cur = _norm(DEFAULT_MODEL)
+    print(f"[laya-cuda] 发现 {len(ms)} 个权重：")
+    marked = False
+    for p in ms:
+        st = os.stat(p)
+        mark = "*" if p == cur else " "
+        marked = marked or mark == "*"
+        try:
+            rel = os.path.relpath(p, os.getcwd())
+        except ValueError:
+            rel = ""
+        print(f"  {mark} {p}")
+        print(f"      {st.st_size / 1e6:8.0f} MB   "
+              f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(st.st_mtime))}"
+              f"   {rel if not rel.startswith('..') else ''}")
+    if marked:
+        print("  （* = 当前 --model 解析到的文件）")
+    elif cur:
+        print(f"  （当前目标不在上述搜索范围内：{cur}）")
+
+
+def _pick_in_dir(d: str) -> Optional[str]:
+    """目录 → 权重文件。优先 model.safetensors；其次唯一的 *.safetensors。"""
+    pref = os.path.join(d, "model" + _MODEL_SUFFIX)
+    if os.path.isfile(pref):
+        return _norm(pref)
+    hits = sorted(f for f in os.listdir(d)
+                  if f.lower().endswith(_MODEL_SUFFIX) and os.path.isfile(os.path.join(d, f)))
+    return _norm(os.path.join(d, hits[0])) if len(hits) == 1 else None
+
+
+def resolve_model(spec: Optional[str] = None) -> str:
+    """把 `--model` 的取值解析成唯一的 .safetensors 绝对路径。
+
+    接受：文件 / 目录 / glob（* ? [ ]）/ 省略 .safetensors 后缀。
+    相对路径按 CWD → 脚本目录 → $LAYA_MODEL_DIR 依次尝试，全部失败则带候选清单报错。
+    """
+    if not spec:
+        spec = DEFAULT_MODEL
+    raw = os.path.expandvars(os.path.expanduser(str(spec)))
+    roots = [raw] if os.path.isabs(raw) else \
+        [os.path.join(d, raw) for d in model_search_dirs()] + [raw]
+
+    for r in roots:
+        if any(ch in r for ch in "*?["):        # glob：必须唯一命中
+            hits = sorted({_norm(h) for h in glob.glob(r, recursive=True)
+                           if os.path.isfile(h) and h.lower().endswith(_MODEL_SUFFIX)})
+            if len(hits) == 1:
+                return hits[0]
+            if hits:
+                raise SystemExit(f"[laya-cuda] glob 命中 {len(hits)} 个权重，请明确指定：\n    "
+                                 + "\n    ".join(hits))
+            continue
+        for cand in (r, r + _MODEL_SUFFIX):     # 文件（自动补后缀）
+            if os.path.isfile(cand):
+                return _norm(cand)
+        if os.path.isdir(r):                    # 目录 → 里面的权重
+            got = _pick_in_dir(r)
+            if got:
+                return got
+            hits = sorted(f for f in os.listdir(r) if f.lower().endswith(_MODEL_SUFFIX))
+            raise SystemExit(f"[laya-cuda] 目录 {r} 内的权重不唯一（或为空）：\n    "
+                             + ("\n    ".join(hits) if hits else "(无 *.safetensors)")
+                             + "\n  请用 --model 明确指定其中一个。")
+    raise SystemExit(_not_found_msg(str(spec)))
+
+
+def _not_found_msg(spec: str) -> str:
+    msg = [f"[laya-cuda] 找不到权重文件: {spec}"]
+    avail = list_models()
+    if avail:
+        msg.append("  本机可见的模型（同 --list）：")
+        msg += [f"    {p}" for p in avail[:12]]
+        if len(avail) > 12:
+            msg.append(f"    …另有 {len(avail) - 12} 个")
+    else:
+        msg.append("  未在搜索目录下发现任何 *.safetensors："
+                   + " | ".join(model_search_dirs()))
+    msg.append("  可指定：文件 / 目录（含 model.safetensors）/ glob / 省略 .safetensors 后缀")
+    return "\n".join(msg)
+
+
+def resolve_cfg_dirs(model_path: str, override: Optional[str],
+                     strict: bool) -> Tuple[List[str], str]:
+    """config.json / rl_agent_config.json 的查找目录（有序）。
+
+    优先级：--config > 模型目录 > $LAYA_CONFIG_DIR > 脚本目录（--strict 时去掉最后一项）。
+    注意原实现是「模型目录 → 脚本目录」，即模型目录没有 config.json 时**静默**套用脚本
+    目录那份 —— 换模型时这等于拿 A 的架构参数去读 B 的权重，故新增 --strict 可关闭。
+    """
+    src: List[str] = []
+    if override:
+        p = _norm(override)
+        d = p if os.path.isdir(p) else os.path.dirname(p)
+        if not os.path.isdir(d):
+            raise SystemExit(f"[laya-cuda] --config 指向的目录不存在: {d}")
+        return [d], "--config (%s)" % d
+    pairs = [(os.path.dirname(model_path), "模型目录")]
+    env = os.environ.get("LAYA_CONFIG_DIR")
+    if env and os.path.isdir(_norm(env)):
+        pairs.append((_norm(env), "$LAYA_CONFIG_DIR"))
+    if not strict:
+        pairs.append((HERE, "脚本目录·回退"))
+    dirs: List[str] = []
+    for d, tag in pairs:
+        if d in dirs:                    # 模型就在脚本目录时会命中同一目录 → 合并标注
+            i = dirs.index(d)
+            short = tag.split("·")[0]
+            if short not in src[i]:
+                src[i] = f"{src[i]}/{short}"
+            continue
+        dirs.append(d)
+        src.append(tag)
+    return dirs, " → ".join(src)
+
+
+def resolve_tokenizer(model_path: str, override: Optional[str],
+                      strict: bool) -> Tuple[Optional[str], str]:
+    """tokenizer.json 的路径与出处。优先级：--tokenizer > 模型目录 > $LAYA_TOKENIZER
+    > 脚本目录（--strict 时去掉最后一项）。找不到返回 (None, 说明)。"""
+    if override:
+        p = _norm(override)
+        if os.path.isdir(p):
+            p = os.path.join(p, "tokenizer.json")
+        if not os.path.isfile(p):
+            raise SystemExit(f"[laya-cuda] --tokenizer 指向的文件不存在: {p}")
+        return p, "--tokenizer"
+    p = os.path.join(os.path.dirname(model_path), "tokenizer.json")
+    if os.path.isfile(p):
+        return p, "模型目录"
+    env = os.environ.get("LAYA_TOKENIZER")
+    if env and os.path.isfile(_norm(env)):
+        return _norm(env), "$LAYA_TOKENIZER"
+    if not strict:
+        p = os.path.join(HERE, "tokenizer.json")
+        if os.path.isfile(p):
+            return p, "脚本目录·回退"
+    return None, "未找到 → 字节级兜底（可跑通，语义无效）"
+
+
+@contextlib.contextmanager
+def cfg_dirs_override(dirs: Sequence[str]):
+    """临时替换 laya_verify 的 config 查找目录列表（apply_official_config 内部用它）。
+
+    只改一个模块级函数、调用完立即还原，因此不会给 CPU 版留下状态残留。
+    """
+    orig = L._cfg_dirs
+    L._cfg_dirs = lambda model_path="": list(dirs)      # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        L._cfg_dirs = orig
+
+
+def preflight(path: str) -> Dict[str, Any]:
+    """加载前的张量清单体检：把"权重不完整"变成一句人话，而不是深处的 KeyError。"""
+    try:
+        with open(path, "rb") as f:
+            n = struct.unpack("<Q", f.read(8))[0]
+            hdr = json.loads(f.read(n).decode("utf-8"))
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(f"[laya-cuda] 不是合法的 safetensors 文件：{path}\n  {e}")
+    keys = [k for k in hdr if k != "__metadata__"]
+    n_layers = sum(1 for k in keys
+                   if re.match(r"^encoder\.layers\.\d+\.attn\.Wqkv\.weight$", k))
+    has_emb = "encoder.embeddings.tok_embeddings.weight" in hdr
+    has_scorer = any(k.startswith("scorer.") for k in keys)
+
+    if not has_emb or n_layers == 0:
+        raise SystemExit(
+            f"[laya-cuda] 权重不完整：{path}\n"
+            f"  张量 {len(keys)} 个，其中 encoder 层 {n_layers} 层"
+            f"{'、tok_embeddings 缺失' if not has_emb else ''}。\n"
+            "  这看起来是**增量/仅头部**的权重（例如只保存 scorer）。本脚本要求完整\n"
+            "  checkpoint（含全部 encoder.* 与 scorer.*）；请改用完整权重，或先把增量\n"
+            "  合并进基座再加载。")
+    if not has_scorer:
+        sys.stderr.write(
+            f"[laya-cuda] [!] 警告：{os.path.basename(path)} 里没有 scorer.* 张量 ——\n"
+            "  决策头缺失，logits 将无意义（会以 0 维 scorer 走空路径）。\n")
+    return {"keys": len(keys), "n_layers": n_layers, "has_scorer": has_scorer}
 
 
 # =============================================================================
@@ -1026,14 +1296,40 @@ def bench_once(pred, state, qs, n: int = 7, warm: int = 3) -> Dict[str, Any]:
 # 4. CLI
 # =============================================================================
 
-def build(model_path: str, dtype: str = "fp32",
-          use_graph: bool = False) -> Tuple[Any, Any, CudaPredictor, FusedKernels]:
-    if not os.path.isfile(model_path):
-        raise SystemExit(f"找不到权重文件: {model_path}\n用 --model 指定路径。")
+def build(model_path: Optional[str] = None, dtype: str = "fp32",
+          use_graph: bool = False, tokenizer: Optional[str] = None,
+          config: Optional[str] = None, strict: bool = False
+          ) -> Tuple[Any, Any, CudaPredictor, FusedKernels, Dict[str, Any]]:
+    """解析 --model 并加载。返回 (st, tok, pred, fused, info)。
+
+    和原版的区别只有三点：
+      1. `model_path` 先过 `resolve_model()`（文件/目录/glob/省略后缀/相对路径）；
+      2. 解析结果**重钉**到 `DEFAULT_MODEL` / `L.DEFAULT_MODEL`，让 route 元数据、
+         config 与 tokenizer 的回退目录都指向真正加载的这个模型；
+      3. 把"加载了谁、配置和分词器来自哪"作为生效清单打到 stderr，并随 info 返回。
+    """
+    path = resolve_model(model_path)
+
+    global DEFAULT_MODEL
+    DEFAULT_MODEL = path
+    L.DEFAULT_MODEL = path          # route()["repo"] 取的就是它
+
+    cfg_dirs, cfg_src = resolve_cfg_dirs(path, config, strict)
+    tok_path, tok_src = resolve_tokenizer(path, tokenizer, strict)
+    preflight(path)
+
     t0 = time.perf_counter()
-    L.apply_official_config(model_path)
-    st = L.SafeTensors(model_path)
-    tok = L.load_tokenizer(model_path)
+    with cfg_dirs_override(cfg_dirs):
+        L.apply_official_config(path)        # 官方 config.json 优先于反推默认值
+    st = L.SafeTensors(path)
+    if tok_path:
+        try:
+            tok = L.HFJsonTokenizer(tok_path)
+        except Exception as e:  # noqa: BLE001
+            tok = L.ByteFallbackTokenizer()
+            tok.note += f" （已找到 {os.path.basename(tok_path)} 但解析失败：{e}）"
+    else:
+        tok = L.ByteFallbackTokenizer()
     fused = FusedKernels()
     t1 = time.perf_counter()
     pred = CudaPredictor(st, tok, L.DEFAULT_CFG, dtype=dtype, fused=fused,
@@ -1048,17 +1344,69 @@ def build(model_path: str, dtype: str = "fp32",
         mem = rt.memGetInfo()
     except Exception:  # noqa: BLE001
         gname, mem = "?", (0, 0)
+
+    n_layers = len(st.matching(r"^encoder\.layers\.\d+\.attn\.Wqkv\.weight$"))
     print(f"[laya-cuda] GPU {gname}｜显存 {mem[1]/2**30:.1f} GB｜cupy {cp.__version__}"
           f"｜dtype={dtype}", file=sys.stderr)
+    # ---- 生效清单：一次说清"到底加载了谁、配置与分词器来自哪 ----
+    print(f"[laya-cuda] 模型 {path}", file=sys.stderr)
+    print(f"[laya-cuda]   {st.file_bytes/1e6:.0f} MB｜{len(st.header)} 张量｜"
+          f"{st.params()/1e6:.1f}M 参数｜encoder {n_layers} 层", file=sys.stderr)
+    print(f"[laya-cuda] 配置 {cfg_src}｜已对齐 "
+          f"{sum(1 for c in L.CFG_ALIGN if c['kind'] == 'applied')} 项｜未建模 "
+          f"{sum(1 for c in L.CFG_ALIGN if c['kind'] == 'unmodeled')} 项｜"
+          f"rope_theta={L.DEFAULT_CFG['rope_theta']:.0f}｜attention={L.DEFAULT_CFG['attention']}"
+          + (f"｜层数={L.DEFAULT_CFG['n_layers']}" if L.DEFAULT_CFG['n_layers'] != n_layers else "")
+          , file=sys.stderr)
+    if L.DEFAULT_CFG["n_layers"] != n_layers:
+        sys.stderr.write(
+            f"[laya-cuda] [!] 配置声明 {L.DEFAULT_CFG['n_layers']} 层、权重实测 {n_layers} 层 ——\n"
+            "  配置与权重可能不是同一份模型，请核对 --config / 模型目录下的 config.json。\n")
+    print(f"[laya-cuda] 分词器 {tok_src}"
+          + (f"（{os.path.basename(tok_path)}）" if tok_path else "")
+          + f"｜{tok.mode} (faithful={tok.faithful})"
+          + ("" if getattr(tok, "faithful", False) else " ⚠ 语义不可靠"), file=sys.stderr)
+    fb = [n for n, s in (("config.json", cfg_src), ("tokenizer.json", tok_src)) if "回退" in s]
+    if fb:
+        sys.stderr.write(
+            f"[laya-cuda] [!] 模型目录没有 {'/'.join(fb)} → 已回落到脚本目录那一份。\n"
+            "  若这是**同架构的微调权重**（如 labs/finetune/artifacts/*.safetensors），这正是想要的；\n"
+            "  若确实换了另一个模型，请加 --strict，或用 --config/--tokenizer 明确指定，\n"
+            "  否则等于拿脚本目录那份配置/分词器去读这个权重（张冠李戴）。\n")
     print(f"[laya-cuda] 权重上传显存 {up*1000:.0f} ms；融合 kernel {fused.ok}/3 "
           + "；".join(fused.notes), file=sys.stderr)
-    print(f"[laya-cuda] tokenizer: {tok.mode} (faithful={tok.faithful})", file=sys.stderr)
-    return st, tok, pred, fused
+
+    info: Dict[str, Any] = {
+        "path": path, "dir": os.path.dirname(path),
+        "size_mb": round(st.file_bytes / 1e6, 1), "tensors": len(st.header),
+        "params_m": round(st.params() / 1e6, 1), "n_layers": n_layers,
+        "config_source": cfg_src, "config_dirs": cfg_dirs,
+        "tokenizer_source": tok_src, "tokenizer_path": tok_path,
+        "strict": strict, "dtype": dtype, "graph": use_graph,
+        "load_ms": round((t1 - t0) * 1000, 1), "upload_ms": round(up * 1000, 1),
+        "fused_kernels": fused.notes, "device": str(gname),
+    }
+    return st, tok, pred, fused, info
 
 
 def main():
     ap = argparse.ArgumentParser(description="Laya 决策模型 CUDA 加速版")
-    ap.add_argument("--model", default=DEFAULT_MODEL)
+    ap.add_argument("--model", "-m", default=None,
+                    help="权重路径：文件 / 目录（含 model.safetensors）/ glob；相对路径按 "
+                         "CWD → 脚本目录 → $LAYA_MODEL_DIR 解析；可省略 .safetensors 后缀。"
+                         "默认脚本目录下的 model.safetensors")
+    ap.add_argument("--list", nargs="?", const="", default=None, metavar="MODEL",
+                    help="列出搜索目录下可见的 *.safetensors 后退出（不加载）；"
+                         "可附带一个路径用于标注当前解析目标")
+    ap.add_argument("--tokenizer", default=None,
+                    help="显式指定 tokenizer.json（默认按 模型目录 → $LAYA_TOKENIZER → 脚本目录）")
+    ap.add_argument("--config", default=None,
+                    help="显式指定 config.json / rl_agent_config.json 所在目录或文件")
+    ap.add_argument("--strict", action="store_true",
+                    help="配置与分词器只从模型目录（或 --config/--tokenizer）取，"
+                         "不静默回落到脚本目录 —— 换模型时强烈建议开启")
+    ap.add_argument("--info", action="store_true",
+                    help="加载并打印生效清单（JSON：模型/配置/分词器出处）后退出")
     ap.add_argument("--dtype", default="fp32", choices=["fp32", "fp16"])
     ap.add_argument("--bench", action="store_true", help="CPU vs GPU 延迟 + 数值一致性")
     ap.add_argument("--selftest", action="store_true", help="用 GPU 后端跑原版验证报告")
@@ -1069,13 +1417,25 @@ def main():
     ap.add_argument("--repeat", type=int, default=7)
     a = ap.parse_args()
 
-    st, tok, pred, fused = build(a.model, a.dtype, use_graph=a.graph)
+    if a.list is not None:
+        show_models(a.list or a.model)
+        return
+
+    st, tok, pred, fused, info = build(a.model, a.dtype, use_graph=a.graph,
+                                       tokenizer=a.tokenizer, config=a.config,
+                                       strict=a.strict)
+
+    if a.info:
+        print(json.dumps(info, ensure_ascii=False, indent=2))
+        return
 
     if a.port:
-        L.STATE.update({"st": st, "tok": tok, "pred": pred, "model_path": a.model})
+        L.STATE.update({"st": st, "tok": tok, "pred": pred,
+                        "model_path": info["path"], "model_info": info})
         srv = L.ThreadingHTTPServer((a.host, a.port), L.Handler)
         url = f"http://{a.host}:{a.port}/"
-        print(f"[laya-cuda] 验证台(GPU) → {url}", file=sys.stderr)
+        print(f"[laya-cuda] 验证台(GPU) → {url}｜模型 {os.path.basename(info['path'])}",
+              file=sys.stderr)
         try:
             srv.serve_forever()
         except KeyboardInterrupt:
@@ -1083,12 +1443,14 @@ def main():
         return
 
     if a.selftest:
-        v = L.Verifier(st, tok, pred, a.model)
+        v = L.Verifier(st, tok, pred, info["path"])
         rep = v.run()
         for c in rep["checks"]:
             print(f"[{c['status']:7s}] {c['group']:14s} {c['name']}\n          {c['detail']}")
         print("\n" + json.dumps(rep["summary"], ensure_ascii=False))
         print(rep["verdict"])
+        print(f"\n模型: {info['path']}｜配置 {info['config_source']}｜"
+              f"分词器 {info['tokenizer_source']}")
         return
 
     # 默认：bench
@@ -1099,7 +1461,7 @@ def main():
     cpu_pred = L.Predictor(st, tok, L.DEFAULT_CFG)
     gpu_eager = pred if not a.graph else CudaPredictor(
         st, tok, L.DEFAULT_CFG, dtype=a.dtype, fused=fused, use_graph=False)
-    print("\n=== 1) 数值一致性（同一 prompt，CPU fp32 vs GPU %s）===" % a.dtype)
+    print(f"\n=== 1) 数值一致性（{os.path.basename(info['path'])}，CPU fp32 vs GPU {a.dtype}）===")
     cmp_res = compare(cpu_pred, gpu_eager, states, qsets)
     for r in cmp_res["rows"]:
         print(f"  markers={r['n_markers']:2d}  max|Δlogit|={r['max_abs_diff']:.3e}  "
@@ -1170,7 +1532,10 @@ def main():
         print(f"  GPU  batch {tg:.0f} ms（{tg/a.batch:.2f} ms/条）"
               f"  → vs CPU ×{tc/max(1e-6,tg):.1f}，vs GPU 逐条 ×{tgs/max(1e-6,tg):.1f}")
 
-    print("\nfused kernels: " + " | ".join(fused.notes))
+    print(f"\n模型: {info['path']}（{info['params_m']}M 参数 / {info['n_layers']} 层 / "
+          f"{info['size_mb']} MB）")
+    print(f"配置: {info['config_source']}｜分词器: {info['tokenizer_source']}")
+    print("fused kernels: " + " | ".join(fused.notes))
 
 
 if __name__ == "__main__":

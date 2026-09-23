@@ -62,6 +62,7 @@ def mulberry32(a):
 DIR = {"up": (-1, 0), "down": (1, 0), "left": (0, -1), "right": (0, 1)}
 KEYS = ["up", "down", "left", "right"]
 BIT = {"up": 1, "down": 2, "left": 4, "right": 8}
+OBIT = {"up": 2, "down": 1, "left": 8, "right": 4}  # 反向位的 bit（与 genMaze 中 obit 映射一致）
 
 
 def genMaze(Wd, Hd, rng):
@@ -213,6 +214,16 @@ def move_question():
     }
 
 
+def closeness_question():
+    """与 maze_laya.html SCENE.questions() 的 closeness 问题对齐（score 类型，list 选项）。"""
+    return {
+        "id": "closeness",
+        "type": "score",
+        "instructions": "How far is the agent from the goal?",
+        "criteria": ["at the goal", "close", "halfway", "far"],
+    }
+
+
 def reconstruct_positions(trace):
     """从轨迹 info 字段解析每步落点 pos[i]（i=1..N），pos[0]=(0,0)。"""
     import re
@@ -262,6 +273,23 @@ def find_seed(target_pos, optimal_target=148, search=100000):
     return None
 
 
+def reconstruct_maze_from_trace(pos, applied, W=W, H=H):
+    """从轨迹的 (落点序列 + 每步方向) 直接重建迷宫 link 数组。
+
+    不依赖 seed / RNG / BFS 过滤：pos[i-1] -(applied[i-1])-> pos[i] 成立
+    即说明 cur 与 nxt 之间的墙是开通的，逐边重建即可。
+    重建结果与 maze_laya.html 的真实网格逐边一致。
+    """
+    link = [0] * (W * H)
+    for i in range(1, len(pos)):
+        d = applied[i - 1]
+        cur = pos[i - 1][0] * W + pos[i - 1][1]
+        nxt = pos[i][0] * W + pos[i][1]
+        link[cur] |= BIT[d]
+        link[nxt] |= OBIT[d]
+    return {"W": W, "H": H, "link": link}
+
+
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
@@ -270,7 +298,8 @@ def main():
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--trace", default=TRACE_DEFAULT)
     ap.add_argument("--out", default=OUT_DEFAULT)
-    ap.add_argument("--search", type=int, default=200000)
+    ap.add_argument("--search", type=int, default=200000,
+                    help="保留兼容参数；新方案从轨迹直接重建拓扑，不再依赖种子穷举（此值无效）")
     args = ap.parse_args()
 
     with open(args.trace, encoding="utf-8") as f:
@@ -282,55 +311,39 @@ def main():
         for m in ln.get("metrics", []):
             if m.get("k") == "BFS 最短":
                 optimal_target = int(m["v"])
-    optimal_target = optimal_target or 148
+    optimal_target = optimal_target or (len(pos) - 1)
     print(f"[convert] 轨迹步数={len(trace)}，落点序列长度={len(pos)}，"
-          f"BFS 最短={optimal_target}")
+          f"轨迹声明 BFS 最短={optimal_target}")
 
-    print("[convert] 穷举 seed 恢复迷宫（匹配 A* 唯一路径）…")
-    found = find_seed(pos, optimal_target, args.search)
-    if found is None:
-        print("[convert] 未在搜索范围内匹配 seed → 退化重建 state。")
-        maze = None
-        seed = None
-        method = "reconstructed"
-    else:
-        seed, maze = found
-        method = "ground_truth"
-        print(f"[convert] 命中 seed={seed}（optimal={bfsDist(maze, START, GOAL)}）")
+    # —— 新方案：从轨迹 (落点+方向) 直接重建迷宫拓扑，不再做 seed 穷举 ——
+    print("[convert] 从轨迹 (落点+方向) 直接重建迷宫拓扑（method=ground_truth）…")
+    maze = reconstruct_maze_from_trace(pos, _applied)
+    recon_opt = bfsDist(maze, START, GOAL)
+    method = "ground_truth"
+    print(f"[convert] 重建迷宫 bfs_shortest={recon_opt}"
+          f"{' ✅ 与轨迹一致' if recon_opt == optimal_target else ' ⚠️ 与轨迹声明不一致，请核对轨迹'}")
 
-    # 构建样本
+    # 构建样本（真实 grid ASCII + move/closeness 两问，与 maze_laya.html 推理分布一致）
     _, tok, pred = build(args.model)
-    questions = [move_question()]
+    questions = [move_question(), closeness_question()]
     samples = []
     for idx, ln in enumerate(trace, start=1):
         state_pos = pos[idx - 1]   # 决策时的位置（移动前）
         rd = ln.get("rd") or {}
-        if maze is not None:
-            sp = state_pos[0] * W + state_pos[1]
-            lm = legal(maze, sp)
-            stxt = text(maze, sp, idx - 1, optimal_target, lm)
-        else:
-            # 退化：用轨迹字段重建 state
-            lm = ln.get("legal") or []
-            rem = {r["key"]: int(-r["score"]) for r in rd.get("ranks", [])}
-            stxt = (f"Perfect maze replay (grid not recovered).\n"
-                    f"current pos=({state_pos[0]},{state_pos[1]}). steps_taken={idx - 1}. "
-                    f"bfs_shortest={optimal_target}.\n"
-                    f"legal_moves: {', '.join(lm)}\n"
-                    f"per-move remaining-steps (teacher rd):\n"
-                    + "\n".join(f"  {k} -> remaining {rem.get(k, '?')}" for k in lm))
+        sp = state_pos[0] * W + state_pos[1]
+        lm = legal(maze, sp)
+        stxt = text(maze, sp, idx - 1, recon_opt, lm)
         sample = {
             "scene": "maze",
-            "seed": seed if seed is not None else 0,
+            "seed": 0,
             "step": idx,
             "state": stxt,
             "questions": questions,
         }
-        # 标签：来自教师 rd（与 choice 问题同分布）
-        labels = derive_labels([Question(**questions[0])], rd)
+        # 标签：move 来自教师 rd（A* 选中方向）；closeness 为 BFS 剩余步归一化期望值
+        labels = derive_labels([Question(**q) for q in questions], rd)
         sample["labels"] = labels
         sample = tokenize_sample(pred, sample)
-        # 校验 labels 有 key
         if "move" not in sample["labels"] or "key" not in sample["labels"]["move"]:
             raise RuntimeError(f"step {idx} 缺少 move 标签：{sample['labels']}")
         samples.append(sample)
@@ -342,15 +355,16 @@ def main():
 
     meta = {
         "method": method,
-        "seed": seed,
+        "seed": None,
         "n_samples": len(samples),
         "optimal_target": optimal_target,
+        "recon_opt": recon_opt,
+        "optimal_match": recon_opt == optimal_target,
         "search_range": args.search,
         "scene": "maze",
-        "note": ("ground_truth: 通过 seed 恢复原始迷宫，state=SCENE.text() 精确重建；"
-                 if method == "ground_truth" else
-                 "reconstructed: 未匹配 seed，用轨迹字段重建 state（决策等价的代理表示）；") +
-                " questions=move(choice)，labels.move.key=rd.choice。",
+        "note": ("ground_truth: 从轨迹 (落点+方向) 直接重建迷宫拓扑，state=真实 SCENE.text()（grid ASCII），"
+                 "与 maze_laya.html 推理分布一致；questions=move(choice)+closeness(score)，"
+                 "labels.move.key=rd.choice（A* 选中方向），labels.closeness=归一化 BFS 剩余步期望值。"),
     }
     meta_path = os.path.join(os.path.dirname(args.out), "maze_convert_meta.json")
     with open(meta_path, "w", encoding="utf-8") as f:

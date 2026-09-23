@@ -1,0 +1,71 @@
+<svg viewBox="0 0 680 372" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Option marker scorer 原理图</title>
+<desc>所有问题拼进同一条 token 序列，每个选项后跟一个 marker 占位，编码器一次前向后在 marker 位置读出 logit，同一问题的 marker 集合内做 softmax</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<text x="40" y="30" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" dominant-baseline="central">一条 token 序列（一次前向）</text>
+
+<rect x="40" y="46" width="44" height="34" rx="5" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="62" y="63" font-family="sans-serif" font-size="12" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">bos</text>
+
+<rect x="88" y="46" width="150" height="34" rx="5" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="163" y="63" font-family="sans-serif" font-size="12" fill="#0C447C" text-anchor="middle" dominant-baseline="central">state tokens ……</text>
+
+<rect x="242" y="46" width="44" height="34" rx="5" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="264" y="63" font-family="sans-serif" font-size="12" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">eos</text>
+
+<rect x="290" y="46" width="120" height="34" rx="5" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="350" y="63" font-family="sans-serif" font-size="12" fill="#0C447C" text-anchor="middle" dominant-baseline="central">Q1 指令 + 选项文本</text>
+<rect x="416" y="46" width="18" height="34" rx="4" fill="#1D9E75" stroke="#0F6E56" stroke-width="0.5"/>
+<rect x="440" y="46" width="18" height="34" rx="4" fill="#1D9E75" stroke="#0F6E56" stroke-width="0.5"/>
+<rect x="464" y="46" width="18" height="34" rx="4" fill="#1D9E75" stroke="#0F6E56" stroke-width="0.5"/>
+<rect x="488" y="46" width="18" height="34" rx="4" fill="#1D9E75" stroke="#0F6E56" stroke-width="0.5"/>
+
+<rect x="518" y="46" width="86" height="34" rx="5" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="561" y="63" font-family="sans-serif" font-size="12" fill="#0C447C" text-anchor="middle" dominant-baseline="central">Q2 指令…</text>
+<rect x="608" y="46" width="18" height="34" rx="4" fill="#1D9E75" stroke="#0F6E56" stroke-width="0.5"/>
+<rect x="630" y="46" width="18" height="34" rx="4" fill="#1D9E75" stroke="#0F6E56" stroke-width="0.5"/>
+
+<text x="440" y="92" font-family="sans-serif" font-size="12" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">marker 占位 ×N</text>
+<text x="625" y="92" font-family="sans-serif" font-size="12" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">×M</text>
+
+<path d="M300 30 L300 22 L470 22" fill="none" stroke="#5F5E5A" stroke-width="0.5" stroke-dasharray="3 3"/>
+<text x="474" y="22" font-family="sans-serif" font-size="12" fill="#5F5E5A" dominant-baseline="central">type_emb 在编码前注入 marker（choice/score/noul）</text>
+
+<path d="M425 80 L425 118" fill="none" stroke="#0F6E56" stroke-width="1" stroke-dasharray="3 3"/>
+<path d="M449 80 L449 118" fill="none" stroke="#0F6E56" stroke-width="1" stroke-dasharray="3 3"/>
+<path d="M473 80 L473 118" fill="none" stroke="#0F6E56" stroke-width="1" stroke-dasharray="3 3"/>
+<path d="M497 80 L497 118" fill="none" stroke="#0F6E56" stroke-width="1" stroke-dasharray="3 3"/>
+<path d="M617 80 L617 118" fill="none" stroke="#0F6E56" stroke-width="1" stroke-dasharray="3 3"/>
+<path d="M639 80 L639 118" fill="none" stroke="#0F6E56" stroke-width="1" stroke-dasharray="3 3"/>
+
+<rect x="340" y="120" width="240" height="30" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="460" y="135" font-family="sans-serif" font-size="12" fill="#085041" text-anchor="middle" dominant-baseline="central">hidden[marker] → 线性层 → 每选项 1 个 logit</text>
+
+<path d="M460 150 L460 170" fill="none" stroke="#0F6E56" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="340" y="172" width="240" height="34" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="460" y="189" font-family="sans-serif" font-size="12" fill="#085041" text-anchor="middle" dominant-baseline="central">logit ÷ 温度 → softmax</text>
+
+<path d="M400 206 L400 232" fill="none" stroke="#0F6E56" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M560 206 L560 232" fill="none" stroke="#0F6E56" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="290" y="234" width="220" height="48" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="400" y="250" font-family="sans-serif" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">Q1 的 4 个 marker 内归一化</text>
+<text x="400" y="270" font-family="sans-serif" font-size="12" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">choice：argmax = billing，p = 0.94</text>
+
+<rect x="530" y="234" width="110" height="48" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="585" y="250" font-family="sans-serif" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">Q2 的 2 个</text>
+<text x="585" y="270" font-family="sans-serif" font-size="12" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">noul = P(yes)</text>
+
+<text x="40" y="258" font-family="sans-serif" font-size="12" fill="#5F5E5A" dominant-baseline="central">问题之间</text>
+<text x="40" y="274" font-family="sans-serif" font-size="12" fill="#5F5E5A" dominant-baseline="central">各自独立归一化</text>
+
+<rect x="40" y="304" width="600" height="48" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="340" y="320" font-family="sans-serif" font-size="13" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">加问题 = 加序列长度，不加前向次数（forward_passes 恒为 1）</text>
+<text x="340" y="338" font-family="sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">实测：1 问 51 ms · 5 问 108 ms · 10 问 228 ms（本机 CPU numpy）</text>
+</svg>

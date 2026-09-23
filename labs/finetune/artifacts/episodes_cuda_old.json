@@ -1,0 +1,13 @@
+{
+  "model": "C:/Users/Administrator/Downloads/jev-zen/labs/finetune/artifacts/model_maze_ft.safetensors",
+  "n": 10,
+  "optimal_ref": 144,
+  "solved_rate": 0.0,
+  "avg_steps": 120.0,
+  "deadend_rate": 0.0,
+  "avg_first_wrong_depth": 9.1,
+  "avg_first_leaf_depth": 86.6,
+  "avg_first_revisit_depth": 10.2,
+  "mean_move_logit_spread": 12.061,
+  "elapsed_s": 110.4
+}

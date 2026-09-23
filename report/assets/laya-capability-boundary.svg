@@ -1,0 +1,43 @@
+<svg viewBox="0 0 680 348" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Laya 当前权重的能力域分层</title>
+<desc>以迷宫微调权重为中心，能力域分三层：网格空间状态决策可用、结构化枚举决策须门禁验证、开放语义语言理解实测不可用</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<ellipse cx="180" cy="176" rx="150" ry="98" fill="none" stroke="#B4B2A9" stroke-width="0.5" stroke-dasharray="4 4"/>
+<ellipse cx="180" cy="176" rx="106" ry="70" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<ellipse cx="180" cy="176" rx="60" ry="40" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+
+<text x="180" y="168" font-family="sans-serif" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">微调域</text>
+<text x="180" y="186" font-family="sans-serif" font-size="12" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">网格 · 迷宫</text>
+<text x="180" y="120" font-family="sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">结构化枚举决策</text>
+<text x="180" y="240" font-family="sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">开放语义 · 语言理解</text>
+
+<path d="M318 130 L350 116" fill="none" stroke="#5F5E5A" stroke-width="0.5" stroke-dasharray="3 3"/>
+<path d="M280 152 L350 176" fill="none" stroke="#5F5E5A" stroke-width="0.5" stroke-dasharray="3 3"/>
+<path d="M232 200 L350 236" fill="none" stroke="#5F5E5A" stroke-width="0.5" stroke-dasharray="3 3"/>
+
+<g>
+<rect x="350" y="90" width="290" height="52" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="366" y="108" font-family="sans-serif" font-size="13" font-weight="500" fill="#2C2C2A" dominant-baseline="central">外层 · 不可用</text>
+<text x="366" y="126" font-family="sans-serif" font-size="12" fill="#5F5E5A" dominant-baseline="central">4 种选项顺序全部选 red，与内容无关</text>
+</g>
+
+<g>
+<rect x="350" y="150" width="290" height="52" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="366" y="168" font-family="sans-serif" font-size="13" font-weight="500" fill="#2C2C2A" dominant-baseline="central">中层 · 须门禁验证</text>
+<text x="366" y="186" font-family="sans-serif" font-size="12" fill="#5F5E5A" dominant-baseline="central">choice / score / noul，spread ≥ 0.05 才可用</text>
+</g>
+
+<g>
+<rect x="350" y="210" width="290" height="52" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="366" y="228" font-family="sans-serif" font-size="13" font-weight="500" fill="#085041" dominant-baseline="central">内层 · 当前权重能力域</text>
+<text x="366" y="246" font-family="sans-serif" font-size="12" fill="#0F6E56" dominant-baseline="central">网格状态有响应，档位判断命中</text>
+</g>
+
+<rect x="40" y="288" width="600" height="40" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="340" y="308" font-family="sans-serif" font-size="12" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">当前服务加载 model_maze_ft.safetensors（321.9M 参数，迷宫微调），不是通用语义检查点</text>
+</svg>

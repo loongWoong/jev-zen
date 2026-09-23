@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#333"/>
+    </marker>
+    <marker id="arrow2" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#666"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-opacity="0.15"/>
+    </filter>
+    <style>
+      .title{font:700 30px "Segoe UI","Microsoft YaHei",sans-serif;fill:#111}
+      .subtitle{font:400 16px "Segoe UI","Microsoft YaHei",sans-serif;fill:#555}
+      .h{font:700 19px "Segoe UI","Microsoft YaHei",sans-serif;fill:#111}
+      .t{font:400 15px "Segoe UI","Microsoft YaHei",sans-serif;fill:#222}
+      .small{font:400 13px "Segoe UI","Microsoft YaHei",sans-serif;fill:#555}
+      .mini{font:400 12px "Segoe UI","Microsoft YaHei",sans-serif;fill:#666}
+      .box{fill:#fff;stroke:#222;stroke-width:1.6;rx:12}
+      .soft{fill:#f7f8fa;stroke:#aaa;stroke-width:1.4;rx:12}
+      .accent{fill:#eef4ff;stroke:#4a6cf7;stroke-width:1.8;rx:12}
+      .green{fill:#eef9f1;stroke:#46a06a;stroke-width:1.8;rx:12}
+      .gold{fill:#fff7e7;stroke:#c78a18;stroke-width:1.8;rx:12}
+      .rose{fill:#fff0f0;stroke:#c95b5b;stroke-width:1.8;rx:12}
+      .line{stroke:#333;stroke-width:2;fill:none;marker-end:url(#arrow)}
+      .thin{stroke:#777;stroke-width:1.5;fill:none;marker-end:url(#arrow2)}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="1000" fill="#ffffff"/>
+  <text x="60" y="55" class="title">ModernBERT 底层原理：一个“现代化”的双向 Encoder</text>
+  <text x="60" y="83" class="subtitle">核心思想：保留 BERT 的双向编码优势，同时用 RoPE、局部/全局交替注意力、GeGLU、Flash Attention、Unpadding 等机制提升长上下文能力与效率。</text>
+
+  <!-- left main flow -->
+  <rect x="50" y="120" width="1040" height="790" class="soft" filter="url(#shadow)"/>
+  <text x="75" y="152" class="h">① 一次 Forward 的数据流</text>
+
+  <rect x="80" y="180" width="930" height="70" class="box"/>
+  <text x="105" y="210" class="h">Tokenization</text>
+  <text x="105" y="234" class="t">Byte-level BPE → token IDs（支持文本 + code；原生上下文最长 8192 token）</text>
+
+  <path d="M545 250 L545 275" class="line"/>
+
+  <rect x="80" y="280" width="930" height="72" class="accent"/>
+  <text x="105" y="310" class="h">Embedding + 位置关系</text>
+  <text x="105" y="334" class="t">Token Embedding → Embedding Norm → 进入 Transformer Encoder</text>
+
+  <path d="M545 352 L545 377" class="line"/>
+
+  <!-- attention layer -->
+  <rect x="80" y="382" width="930" height="212" class="box"/>
+  <text x="105" y="412" class="h">② Attention：Local / Global 交替</text>
+
+  <rect x="110" y="430" width="410" height="64" class="gold"/>
+  <text x="130" y="458" class="h">Local Attention</text>
+  <text x="130" y="481" class="small">大多数层：滑动窗口，token 主要看附近 128 个 token</text>
+
+  <rect x="570" y="430" width="410" height="64" class="green"/>
+  <text x="590" y="458" class="h">Global Attention</text>
+  <text x="590" y="481" class="small">每隔约 3 层一次：所有 token 全局互相可见</text>
+
+  <path d="M315 494 L315 530" class="thin"/>
+  <path d="M775 494 L775 530" class="thin"/>
+
+  <rect x="110" y="525" width="870" height="52" class="soft"/>
+  <text x="135" y="548" class="t">RoPE：对 Query / Key 注入相对位置信息；相比绝对位置 embedding 更适合长上下文。</text>
+
+  <path d="M545 594 L545 620" class="line"/>
+
+  <!-- FFN -->
+  <rect x="80" y="627" width="930" height="120" class="accent"/>
+  <text x="105" y="657" class="h">③ GeGLU Feed-Forward</text>
+  <text x="105" y="683" class="t">Linear(x) → Gate(x) ⊙ Activation(Value(x)) → Linear</text>
+  <text x="105" y="709" class="small">用门控 MLP 替代传统 BERT 的普通 GELU-MLP，增强非线性表达。</text>
+  <text x="105" y="731" class="small">并减少不必要 bias、采用更现代的参数与归一化设计。</text>
+
+  <path d="M545 748 L545 775" class="line"/>
+
+  <rect x="80" y="782" width="930" height="78" class="green"/>
+  <text x="105" y="812" class="h">④ Residual + Normalization</text>
+  <text x="105" y="836" class="t">x ← x + Sublayer(x)；Pre-LN / 稳定训练；然后进入下一层</text>
+
+  <path d="M545 860 C545 885,545 892,515 892 L515 180" class="thin"/>
+  <text x="560" y="895" class="small">× 多层堆叠：ModernBERT-base 22 层；large 28 层</text>
+
+  <!-- right conceptual panel -->
+  <rect x="1120" y="120" width="430" height="790" class="soft" filter="url(#shadow)"/>
+  <text x="1145" y="152" class="h">② 为什么 ModernBERT 更“现代”</text>
+
+  <rect x="1145" y="180" width="380" height="120" class="gold"/>
+  <text x="1165" y="208" class="h">双向 Encoder</text>
+  <text x="1165" y="235" class="t">一个 token 可以结合左右两侧上下文。</text>
+  <text x="1165" y="258" class="t">适合分类、检索、NER、语义匹配、</text>
+  <text x="1165" y="281" class="t">Masked Language Modeling 等理解型任务。</text>
+
+  <rect x="1145" y="320" width="380" height="135" class="accent"/>
+  <text x="1165" y="348" class="h">长上下文 + 高效率</text>
+  <text x="1165" y="375" class="t">8192 token context</text>
+  <text x="1165" y="397" class="t">Local attention 降低长序列计算压力</text>
+  <text x="1165" y="419" class="t">Global attention 周期性恢复全局信息</text>
+  <text x="1165" y="441" class="t">Flash Attention + Unpadding 减少无效计算</text>
+
+  <rect x="1145" y="475" width="380" height="120" class="green"/>
+  <text x="1165" y="503" class="h">局部 → 全局的信息扩散</text>
+  <text x="1165" y="531" class="t">Layer 1  Local</text>
+  <text x="1165" y="551" class="t">Layer 2  Local</text>
+  <text x="1165" y="571" class="t">Layer 3  Global  ← 信息全局汇聚</text>
+
+  <rect x="1145" y="615" width="380" height="120" class="rose"/>
+  <text x="1165" y="643" class="h">它仍然不是 LLM</text>
+  <text x="1165" y="670" class="t">Encoder-only：重点是“理解 / 表示 / 判别”</text>
+  <text x="1165" y="693" class="t">而不是 autoregressive 地逐 token 生成长文本。</text>
+  <text x="1165" y="716" class="t">这正适合 Laya 的 Decision Head 路线。</text>
+
+  <rect x="1145" y="755" width="380" height="130" class="box"/>
+  <text x="1165" y="783" class="h">典型输出</text>
+  <text x="1165" y="811" class="t">Hidden States [B, L, H]</text>
+  <text x="1165" y="834" class="t">↓</text>
+  <text x="1165" y="856" class="t">Classification / Retrieval / Token Head</text>
+  <text x="1165" y="878" class="small">Laya：再接 Typed Decision Head → choice / score / noul</text>
+
+  <!-- bottom compare -->
+  <text x="60" y="950" class="h">③ 和传统 BERT 的关键变化</text>
+  <text x="60" y="978" class="t">BERT：绝对位置 + 全局 Attention + GELU-MLP</text>
+  <text x="500" y="978" class="t">ModernBERT：RoPE + Local/Global 交替 + GeGLU + Flash Attention + Unpadding + 8192 context</text>
+</svg>

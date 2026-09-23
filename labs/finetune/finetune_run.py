@@ -166,7 +166,18 @@ def main():
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--dataset", default=os.path.join(HERE, "artifacts", "maze_dataset.jsonl"))
     ap.add_argument("--epochs", type=int, default=80)
-    ap.add_argument("--lr", type=float, default=0.02)
+    ap.add_argument("--lr", type=float, default=0.003,
+                    help="微调学习率（原 0.02 在 148 样本上过拟合→通道门爆炸，降到 3e-3）")
+    ap.add_argument("--wd", type=float, default=1e-4, help="scorer 权重衰减")
+    ap.add_argument("--calib-penalty", type=float, default=0.0,
+                    help="logit 极差硬惩罚系数（默认 0=关闭；校准改由 --label-smoothing 负责）")
+    ap.add_argument("--spread-cap", type=float, default=3.0,
+                    help="logit 极差上限（仅当 --calib-penalty>0 时生效）")
+    ap.add_argument("--label-smoothing", type=float, default=0.1,
+                    help="CE 目标平滑（0.1 ⇒ 金 0.925/其余 0.025），天然压制过自信并兼作正则")
+    ap.add_argument("--val-frac", type=float, default=0.2, help="留出验证集比例")
+    ap.add_argument("--early-stop", action="store_true",
+                    help="val_acc 连续未升时早停（并还原最佳）")
     ap.add_argument("--out-model", default=os.path.join(HERE, "artifacts", "model_maze_ft.safetensors"))
     ap.add_argument("--no-save", action="store_true")
     ap.add_argument("--log-every", type=int, default=10,
@@ -231,37 +242,98 @@ def main():
         hit = 0
         for mi, gi in zip(markers_list, gold_idx):
             logits, _ = scorer_forward(mi, Pp)
-            if int(np.argmax(logits)) == gi:
+            # 仅取 move 问题（问题 0）的 4 个选项 logits 判定
+            if int(np.argmax(logits[:4])) == gi:
                 hit += 1
         return hit / n
 
     before_acc = compute_acc(P)
 
-    # 4) 训练
+    # 4) 训练（带校准围栏：spread 惩罚 + 权重衰减 + 留出验证集早停）
+    # 切分训练/验证（按索引等距切分，确定性、可复现）
+    n_val = max(1, int(round(n * args.val_frac)))
+    val_idx = set(range(0, n, max(1, n // n_val)))
+    train_markers = [markers_list[i] for i in range(n) if i not in val_idx]
+    train_gold = [gold_idx[i] for i in range(n) if i not in val_idx]
+    val_markers = [markers_list[i] for i in val_idx]
+    val_gold = [gold_idx[i] for i in val_idx]
+    print(f"[ft] 训练样本 {len(train_markers)} / 验证样本 {len(val_markers)}", flush=True)
+
+    FAIL_SPREAD = 5.0  # 放宽：校准改由 label smoothing 负责，这里仅防极端爆炸
     opt = Adam(P, lr=args.lr)
+    best_P = None
+    best_val = -1.0
+    patience = 0
     for epoch in range(args.epochs):
         tot_loss = 0.0
         grads = {k: np.zeros_like(P[k]) for k in P}
-        for mi, gi in zip(markers_list, gold_idx):
+        for mi, gi in zip(train_markers, train_gold):
             logits, cache = scorer_forward(mi, P)
-            # 稳定 softmax + CE
-            z = logits - logits.max()
+            mv = logits[:4]                         # move 的 4 个选项（问题 0）
+            # 稳定 softmax + CE（带 label smoothing 做校准/正则）
+            z = mv - mv.max()
             e = np.exp(z)
             p = e / e.sum()
-            tot_loss += float(-np.log(p[gi] + 1e-12))
-            dlogits = p.copy()
-            dlogits[gi] -= 1.0                     # CE 对 logits 的梯度
-            g = scorer_backward(dlogits, cache)
+            K = mv.shape[0]
+            eps = args.label_smoothing
+            tgt = np.full(K, eps / K)
+            tgt[gi] = 1.0 - eps * (K - 1) / K
+            tot_loss += float(-np.sum(tgt * np.log(p + 1e-12)))
+            dlogits_mv = p - tgt                       # 平滑 CE 对 logits 的梯度
+            # 可选硬围栏：压制 logit 极差（默认关闭，靠 label smoothing 即可）
+            spread = float(mv.max() - mv.min())
+            if args.calib_penalty > 0 and spread > args.spread_cap:
+                dlogits_mv[int(np.argmax(mv))] += args.calib_penalty
+                dlogits_mv[int(np.argmin(mv))] -= args.calib_penalty
+            # 组装完整梯度（scorer 输出 8 个 logit：move[0:4] 监督，closeness[4:8] 不监督）
+            dlogits_full = np.zeros_like(logits)
+            dlogits_full[:4] = dlogits_mv
+            g = scorer_backward(dlogits_full, cache)
             for k in grads:
                 grads[k] += g[k]
-        # 平均梯度 + Adam 更新
+        # 平均梯度 + Adam 更新（+ 权重衰减）
         for k in grads:
-            grads[k] /= n
+            grads[k] /= len(train_markers)
         upd = opt.step(grads)
         for k in P:
-            P[k] = P[k] - upd[k]
+            P[k] = P[k] - upd[k] - args.lr * args.wd * P[k]
+        # 验证
+        v_loss = 0.0
+        v_hit = 0
+        v_spread = 0.0
+        for mi, gi in zip(val_markers, val_gold):
+            logits, _ = scorer_forward(mi, P)
+            mv = logits[:4]
+            z = mv - mv.max(); e = np.exp(z); p = e / e.sum()
+            v_loss += float(-np.log(p[gi] + 1e-12))
+            v_spread = max(v_spread, float(mv.max() - mv.min()))
+            if int(np.argmax(mv)) == gi:
+                v_hit += 1
+        v_loss /= max(1, len(val_markers))
+        v_acc = v_hit / max(1, len(val_markers))
         if (epoch + 1) % args.log_every == 0 or epoch == 0:
-            print(f"[ft] epoch {epoch + 1:3d}/{args.epochs}  loss={tot_loss / n:.4f}", flush=True)
+            print(f"[ft] epoch {epoch + 1:3d}/{args.epochs}  loss={tot_loss / len(train_markers):.4f}"
+                  f"  val_loss={v_loss:.4f}  val_acc={v_acc:.3f}  val_spread={v_spread:.3f}", flush=True)
+        # 早停：校准崩了直接还原最佳并退出
+        if v_spread > FAIL_SPREAD:
+            print(f"[ft] epoch {epoch + 1}: val_spread={v_spread:.3f} > {FAIL_SPREAD} → 早停（还原最佳）", flush=True)
+            if best_P is not None:
+                P = {k: best_P[k].copy() for k in best_P}
+            break
+        if v_acc > best_val:
+            best_val = v_acc
+            best_P = {k: P[k].copy() for k in P}
+            patience = 0
+        else:
+            patience += 1
+            if args.early_stop and patience >= 8:
+                print(f"[ft] epoch {epoch + 1}: val_acc 连续 {patience} 轮未升 → 早停（还原最佳）", flush=True)
+                P = {k: best_P[k].copy() for k in best_P}
+                break
+    else:
+        # 正常跑完：若曾出现更好模型则还原
+        if best_P is not None:
+            P = {k: best_P[k].copy() for k in best_P}
 
     after_acc = compute_acc(P)
 
