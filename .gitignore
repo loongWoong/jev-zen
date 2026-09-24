@@ -3,6 +3,11 @@ model.safetensors
 *.pyc
 *.bak*
 *.log
+# 注意：**不要**在这里忽略 svgedit/。
+#   svgedit/ 是自带 .git 的独立子项目（有独立的 .gitignore / README.md / LICENSE），
+#   它保持"未跟踪"状态，由主仓库按需以 gitlink（嵌入式仓库）方式记录；
+#   若在此忽略整个目录，连 gitlink 都建不出来。
+#   曾经这里的 `/.svgbuild` 已随该目录迁入 svgedit/ 并下沉到 svgedit/.gitignore，故删除。
 # labs/finetune：忽略生成物 / 大文件 / 缓存
 # - model_maze_ft.safetensors 约 643MB（微调产出，勿入库）
 # - maze_markers.npz 为 marker_h 预计算缓存

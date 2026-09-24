@@ -5,23 +5,56 @@
 用法:
     python labs/build.py            # 构建全部场景
     python labs/build.py snake      # 只构建指定场景
+    python labs/build.py --list     # 列出可用目标
+
+注意：本脚本**不再负责 svgb（SVG 美化产品页）**。
+它已随 svgedit 子项目独立，构建入口改为 `svgedit/build.py`（仅标准库，不需要 node）：
+    cd svgedit && python build.py
 """
 import json
 import os
-import re
 import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-NODE = "/Users/wanglongzhen/.workbuddy/binaries/node/versions/22.22.2-3/bin/node"
-if not os.path.exists(NODE):
-    NODE = "node"
+
+
+def _find_node():
+    """跨平台解析 node：环境变量 NODE > WorkBuddy 托管版本 > PATH 上的 node。
+
+    原实现硬编码了 macOS 上某个用户目录的路径，换机器直接失效
+    （本机是 Windows，该路径不存在 → 静默 fallback 到 PATH，行为不可控）。
+    """
+    env = os.environ.get("NODE")
+    if env and os.path.exists(env):
+        return env
+    home = os.path.expanduser("~")
+    tmpl = os.path.join(home, ".workbuddy", "binaries", "node", "versions", "{v}", "bin", "node")
+    for v in ("22.22.2-3", "22.20.0"):
+        p = tmpl.format(v=v)
+        if os.path.exists(p):
+            return p
+    # Windows 托管布局（无 bin/ 子目录）
+    tmpl2 = os.path.join(home, ".workbuddy", "binaries", "node", "versions", "{v}", "node.exe")
+    for v in ("22.22.2-3", "22.20.0"):
+        p = tmpl2.format(v=v)
+        if os.path.exists(p):
+            return p
+    return "node"
+
+
+NODE = _find_node()
 
 
 def read(p):
     with open(p, "r", encoding="utf-8") as f:
         return f.read()
+
+
+def write(p, s):
+    with open(p, "w", encoding="utf-8", newline="\n") as f:
+        f.write(s)
 
 
 def scene_meta(src):
@@ -51,16 +84,21 @@ def build(name):
     if "{{" in html:
         raise SystemExit(f"{name}: 模板仍残留占位符")
     dst = os.path.join(ROOT, name + "_laya.html")
-    with open(dst, "w", encoding="utf-8") as f:
-        f.write(html)
+    write(dst, html)
     return dst, len(html.splitlines())
 
 
+def scene_names():
+    return sorted(f[:-3] for f in os.listdir(os.path.join(HERE, "scenes")) if f.endswith(".js"))
+
+
 def main():
-    names = sys.argv[1:]
-    if not names:
-        names = sorted(f[:-3] for f in os.listdir(os.path.join(HERE, "scenes"))
-                       if f.endswith(".js"))
+    args = sys.argv[1:]
+    if "--list" in args:
+        print("scenes:", " ".join(scene_names()))
+        return
+
+    names = [a for a in args if not a.startswith("-")] or scene_names()
     for n in names:
         dst, lines = build(n)
         print(f"  {os.path.basename(dst):26s} {lines:5d} 行")
